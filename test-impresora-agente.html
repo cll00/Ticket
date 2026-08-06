@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Probador de impresora térmica · Agente local</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#141414;
+    --ink-soft:#2a2a28;
+    --paper:#e9e5d6;
+    --paper-light:#f3f0e4;
+    --line:#c9c4b0;
+    --teal:#2fd6a7;
+    --teal-dim:#1a8c6d;
+    --red:#e0454a;
+    --amber:#e0a13a;
+    --mono:'IBM Plex Mono', 'Courier New', monospace;
+    --disp:'Space Grotesk', var(--mono);
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper-light);
+    font-family:var(--mono);
+    font-size:14px;
+    line-height:1.5;
+  }
+
+  header{
+    padding:28px 24px 20px;
+    border-bottom:1px solid #2c2c2a;
+  }
+  header h1{
+    font-family:var(--disp);
+    font-size:20px;
+    font-weight:700;
+    letter-spacing:.02em;
+    margin:0 0 4px;
+  }
+  header h1 .dim{ color:var(--teal); }
+  header p{
+    margin:0;
+    color:#8a8878;
+    font-size:13px;
+  }
+
+  #compat-warning{
+    display:none;
+    background:var(--red);
+    color:#fff;
+    padding:12px 24px;
+    font-size:13px;
+    font-weight:600;
+  }
+
+  main.layout{
+    display:grid;
+    grid-template-columns:380px 1fr;
+    gap:1px;
+    background:#2c2c2a;
+  }
+  @media (max-width: 860px){
+    main.layout{ grid-template-columns:1fr; }
+  }
+
+  .col{ background:var(--ink); padding:20px; }
+
+  .panel{
+    background:var(--ink-soft);
+    border:1px solid #333330;
+    border-radius:6px;
+    padding:16px;
+    margin-bottom:16px;
+  }
+  .panel h2{
+    font-family:var(--disp);
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--teal);
+    margin:0 0 4px;
+  }
+  .panel .hint{
+    font-size:12px;
+    color:#8a8878;
+    margin:0 0 14px;
+  }
+
+  label{
+    display:block;
+    font-size:12px;
+    color:#c8c4b0;
+    margin:10px 0 4px;
+  }
+  select, textarea, input[type=text]{
+    width:100%;
+    background:#1c1c1a;
+    color:var(--paper-light);
+    border:1px solid #3a3a37;
+    border-radius:4px;
+    padding:8px 10px;
+    font-family:var(--mono);
+    font-size:13px;
+  }
+  textarea{ resize:vertical; min-height:60px; }
+
+  .row{ display:flex; gap:8px; }
+  .row > *{ flex:1; }
+
+  button{
+    font-family:var(--disp);
+    font-weight:600;
+    font-size:13px;
+    border:none;
+    border-radius:4px;
+    padding:10px 14px;
+    cursor:pointer;
+    transition:opacity .15s;
+  }
+  button:disabled{ opacity:.35; cursor:not-allowed; }
+  button:not(:disabled):hover{ opacity:.88; }
+
+  .btn-primary{ background:var(--teal); color:#0a0a0a; }
+  .btn-secondary{ background:#3a3a37; color:var(--paper-light); }
+  .btn-danger{ background:var(--red); color:#fff; }
+  .btn-block{ width:100%; margin-top:8px; }
+
+  .status{
+    display:flex; align-items:center; gap:8px;
+    font-size:12px; margin-top:10px;
+  }
+  .status .dot{
+    width:9px; height:9px; border-radius:50%;
+    background:#5a5a56;
+  }
+  .status.on .dot{ background:var(--teal); box-shadow:0 0 6px var(--teal); }
+  .status.off .dot{ background:var(--red); }
+
+  /* --- Pestañas --- */
+  .tabs{
+    display:flex;
+    gap:4px;
+    margin-bottom:14px;
+  }
+  .tab-btn{
+    flex:1;
+    background:#1c1c1a;
+    color:#8a8878;
+    border:1px solid #34342f;
+    border-radius:5px 5px 0 0;
+    padding:10px 8px;
+    font-family:var(--disp);
+    font-weight:600;
+    font-size:12px;
+  }
+  .tab-btn.active{
+    background:var(--ink-soft);
+    color:var(--teal);
+    border-bottom-color:var(--ink-soft);
+  }
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+
+  /* --- Editor visual: lista de bloques --- */
+  #listaBloques{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    max-height:280px;
+    overflow-y:auto;
+    margin-bottom:10px;
+  }
+  .bloque-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#1c1c1a;
+    border:1px solid #34342f;
+    border-radius:4px;
+    padding:8px 10px;
+    font-size:12px;
+  }
+  .bloque-resumen{ flex:1; margin-right:8px; word-break:break-word; }
+  .bloque-controles button{
+    padding:3px 7px;
+    font-size:11px;
+    margin-left:3px;
+    background:#3a3a37;
+  }
+
+  .segmento-item{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:#1c1c1a;
+    border:1px solid #34342f;
+    border-radius:4px;
+    padding:6px 8px;
+    margin-bottom:6px;
+  }
+  .segmento-item input[type=text]{
+    flex:1;
+    padding:5px 8px;
+    font-size:12px;
+  }
+  .segmento-item label{
+    display:flex;
+    align-items:center;
+    gap:2px;
+    margin:0;
+    font-size:11px;
+    white-space:nowrap;
+    color:#c8c4b0;
+  }
+  .segmento-item button{
+    padding:3px 7px;
+    font-size:11px;
+    background:#3a3a37;
+    flex-shrink:0;
+  }
+
+  /* --- Vista previa estilo ticket real --- */
+  .receipt-wrapper{
+    display:flex;
+    justify-content:center;
+    padding:12px 0 28px;
+  }
+  .receipt{
+    width:calc(48ch + 36px); /* JS ajusta esto según "Ancho de papel" — ver actualizarAnchoPreview() */
+    background:var(--paper);
+    color:#1c1c1a;
+    padding:22px 18px 24px;
+    font-family:var(--mono);
+    font-size:12.5px;
+    line-height:1.55;
+    white-space:pre-wrap;
+    word-break:break-word;
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+    position:relative;
+  }
+  .receipt::after{
+    content:"";
+    position:absolute;
+    left:0; right:0; bottom:-9px; height:16px;
+    background:
+      linear-gradient(135deg, var(--paper) 50%, transparent 50%) 0 0/12px 16px repeat-x,
+      linear-gradient(-135deg, var(--paper) 50%, transparent 50%) 0 0/12px 16px repeat-x;
+    background-position: 0 0, 6px 0;
+  }
+  .receipt .linea{ min-height:1.4em; }
+  .receipt .marca-corte{
+    margin:10px 0;
+    text-align:center;
+    font-size:11px;
+    letter-spacing:2px;
+    color:#8a8878;
+    border-top:1px dashed #b5b09a;
+    padding-top:6px;
+  }
+
+  .log-panel pre{
+    margin:0;
+    max-height:220px;
+    overflow-y:auto;
+    font-size:12px;
+    color:#9fd8c4;
+    white-space:pre-wrap;
+  }
+  .log-panel pre .err{ color:var(--red); }
+  .log-panel pre .ok{ color:var(--teal); }
+
+  .field-note{
+    font-size:11px;
+    color:#6f6d5e;
+    margin-top:4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="compat-warning">
+  ⚠️ No se pudo contactar al agente local. Verifica que esté corriendo
+  (python agente_impresion.py) y que el dominio de esta página esté
+  en su lista ORIGENES_PERMITIDOS.
+</div>
+
+<header>
+  <h1>Probador de impresora térmica <span class="dim">· Agente local</span></h1>
+  <p>Arma tickets con el editor visual, o pruébalos desde tu propia app PHP.</p>
+</header>
+
+<main class="layout">
+
+  <div class="col">
+
+    <!-- ------------------------------------------------------------
+         SECCIÓN 1 — CONEXIÓN CON EL AGENTE LOCAL (compartida por
+         las dos pestañas, ya que ambas terminan enviando el mismo
+         tipo de bytes al mismo agente).
+         ------------------------------------------------------------ -->
+    <section class="panel">
+      <h2>1. Agente local</h2>
+      <p class="hint">El agente debe estar corriendo en la misma PC que el navegador.</p>
+
+      <label for="agentUrl">URL del agente</label>
+      <input type="text" id="agentUrl" value="http://127.0.0.1:9100">
+
+      <label for="printerName">Nombre de la impresora</label>
+      <input type="text" id="printerName" placeholder="Vacío = usar la predeterminada del sistema">
+      <div class="field-note">
+        Windows: nombre exacto tal como aparece en "Impresoras y escáneres".
+        Linux: nombre de la cola CUPS (revisa con "lpstat -p").
+      </div>
+
+      <button id="btnVerificar" class="btn-primary btn-block">Verificar conexión</button>
+
+      <div class="status off" id="status">
+        <span class="dot"></span>
+        <span id="statusText">Sin verificar</span>
+      </div>
+      <div class="field-note">
+        La primera vez, el navegador puede pedir permiso para "acceder
+        a dispositivos en tu red local" — acéptalo, es normal.
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------
+         SECCIÓN 2 — FORMATO DE PAPEL (compartida). Define el ancho
+         de línea usado por los separadores del editor visual, y la
+         codificación usada para decodificar acentos tanto del editor
+         visual como del contenido que llega desde PHP.
+         ------------------------------------------------------------ -->
+    <section class="panel">
+      <h2>2. Formato de papel</h2>
+      <p class="hint">Aplica a las dos pestañas: define ancho de línea y codificación de acentos.</p>
+
+      <label for="anchoPapel">Ancho de papel</label>
+      <select id="anchoPapel">
+        <option value="32">58 mm (32 caracteres)</option>
+        <option value="48" selected>80 mm (48 caracteres)</option>
+      </select>
+
+      <label for="codificacion">Codificación (code page ESC/POS)</label>
+      <select id="codificacion">
+        <option value="cp437" selected>CP437 (más común)</option>
+        <option value="iso8859-1">ISO-8859-1 / Latin-1</option>
+        <option value="raw">Sin conversión (enviar UTF-8 tal cual)</option>
+      </select>
+    </section>
+
+    <!-- ------------------------------------------------------------
+         PESTAÑAS
+         ------------------------------------------------------------ -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tabEditor">Editor Visual ESC/POS</button>
+      <button class="tab-btn" data-tab="tabProbador">Probador</button>
+    </div>
+
+    <!-- ============================================================
+         PESTAÑA 1 — EDITOR VISUAL ESC/POS
+         Arma el ticket agregando bloques (texto, separador, salto,
+         corte) sin escribir comandos a mano. Al final puedes generar
+         el código PHP equivalente para pegarlo en tu backend.
+         ============================================================ -->
+    <div id="tabEditor" class="tab-panel active">
+
+      <section class="panel">
+        <h2>Agregar bloque</h2>
+
+        <label for="nuevoTipoBloque">Tipo de bloque</label>
+        <select id="nuevoTipoBloque">
+          <option value="texto" selected>Texto</option>
+          <option value="separador">Línea separadora</option>
+          <option value="salto">Salto de línea</option>
+          <option value="corte">Corte de papel</option>
+        </select>
+
+        <div id="camposTexto">
+          <label>Segmentos de esta línea</label>
+          <p class="hint">Agrega uno o más trozos de texto, cada uno con su propio formato — se imprimen seguidos, en la misma línea. Ej: "TOTAL:" en negrita + " $3000" normal.</p>
+          <div id="listaSegmentos"></div>
+          <button type="button" id="btnAgregarSegmento" class="btn-secondary btn-block">+ Agregar segmento</button>
+          <div class="field-note">N = negrita · S = subrayado</div>
+
+          <div class="row">
+            <div>
+              <label for="campoAlineacion">Alineación (toda la línea)</label>
+              <select id="campoAlineacion">
+                <option value="left" selected>Izquierda</option>
+                <option value="center">Centro</option>
+                <option value="right">Derecha</option>
+              </select>
+            </div>
+            <div>
+              <label for="campoTamano">Tamaño (toda la línea)</label>
+              <select id="campoTamano">
+                <option value="normal" selected>Normal</option>
+                <option value="ancho">Doble ancho</option>
+                <option value="alto">Doble alto</option>
+                <option value="ambos">Doble ancho y alto</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="camposSeparador" style="display:none">
+          <label for="campoCaracter">Carácter repetido</label>
+          <input type="text" id="campoCaracter" maxlength="1" value="-">
+        </div>
+
+        <button id="btnAgregarBloque" class="btn-secondary btn-block">+ Agregar bloque</button>
+      </section>
+
+      <section class="panel">
+        <h2>Bloques del ticket</h2>
+        <div id="listaBloques"></div>
+        <button id="btnLimpiarBloques" class="btn-danger btn-block">Vaciar todo</button>
+      </section>
+
+      <section class="panel">
+        <h2>Exportar</h2>
+        <button id="btnImprimirVisual" class="btn-primary btn-block" disabled>Imprimir este ticket</button>
+        <button id="btnGenerarPhp" class="btn-secondary btn-block">Generar código PHP</button>
+        <textarea id="codigoPhpGenerado" rows="10" readonly style="display:none; margin-top:10px; font-size:11px;"></textarea>
+        <button id="btnCopiarPhp" class="btn-secondary btn-block" style="display:none">Copiar al portapapeles</button>
+      </section>
+
+    </div>
+
+    <!-- ============================================================
+         PESTAÑA 2 — PROBADOR (la funcionalidad original: escribir
+         texto a mano, o traer el ticket ya armado desde tu PHP)
+         ============================================================ -->
+    <div id="tabProbador" class="tab-panel">
+
+      <section class="panel">
+        <h2>Origen del ticket</h2>
+        <p class="hint">
+          Escribe texto a mano, o trae el ticket ya armado desde tu
+          endpoint PHP (que debe responder JSON: {"data": "&lt;base64&gt;"}).
+          Tip: abre esta página con
+          <code>?php_url=https://tu-dominio.com/generar_ticket.php</code>
+          en la URL para precargar y probar tu endpoint directo.
+        </p>
+
+        <label>
+          <input type="radio" name="origen" value="manual" id="origenManual" checked>
+          Escribir manualmente aquí
+        </label>
+        <label>
+          <input type="radio" name="origen" value="php" id="origenPhp">
+          Obtener desde mi endpoint PHP
+        </label>
+
+        <div id="bloqueManual">
+          <label for="contenido">Texto del ticket</label>
+          <textarea id="contenido" rows="6">MI TIENDA
+--------------------------------
+Producto A          x1     $1000
+Producto B          x2     $2000
+--------------------------------
+TOTAL:                     $3000
+
+Gracias por su compra ñÑ áéíóú</textarea>
+          <label>
+            <input type="checkbox" id="cortarAlFinal" checked> Enviar comando de corte al final
+          </label>
+          <button id="btnPreview" class="btn-secondary btn-block">Actualizar vista previa</button>
+        </div>
+
+        <div id="bloquePhp" style="display:none">
+          <label for="phpUrl">URL de tu endpoint PHP</label>
+          <input type="text" id="phpUrl" placeholder="https://tu-dominio.com/generar_ticket.php">
+          <div class="field-note">
+            Si el fetch falla con error de red, revisa que el endpoint
+            tenga el header Access-Control-Allow-Origin habilitado para
+            el origen de esta página.
+          </div>
+          <button id="btnCargarPhp" class="btn-secondary btn-block">Cargar ticket desde PHP</button>
+          <div class="field-note" id="phpCargaEstado">Nada cargado todavía.</div>
+        </div>
+
+        <button id="btnImprimir" class="btn-primary btn-block" disabled>Imprimir en impresora</button>
+      </section>
+
+    </div>
+
+  </div>
+
+  <div class="col">
+    <div class="receipt-wrapper">
+      <div class="receipt" id="receiptPreview"></div>
+    </div>
+
+    <section class="panel log-panel">
+      <h2>Registro de eventos</h2>
+      <pre id="log">Esperando acciones...</pre>
+    </section>
+  </div>
+
+</main>
+
+<script>
+/* ================================================================
+   CONSTANTES ESC/POS
+   ================================================================ */
+
+const ESC = 0x1B;
+const GS  = 0x1D;
+
+const CMD_INIT = [ESC, 0x40];
+const alinear = (n) => [ESC, 0x61, n];
+const negrita = (on) => [ESC, 0x45, on ? 1 : 0];
+const subrayado = (on) => [ESC, 0x2D, on ? 1 : 0]; // ESC - n : 0=off, 1=subrayado simple
+const tamano = (n) => [GS, 0x21, n];
+
+const COMANDO_CORTE_TOTAL   = [GS, 0x56, 0x00];
+const COMANDO_CORTE_PARCIAL = [GS, 0x56, 0x01];
+
+const CMD_CODEPAGE_CP437 = [ESC, 0x74, 0x00];
+
+const TABLA_CP437 = {
+  'á':0xA0, 'é':0x82, 'í':0xA1, 'ó':0xA2, 'ú':0xA3,
+  'Á':0xB5, 'É':0x90, 'Í':0xD6, 'Ó':0xE0, 'Ú':0xE9,
+  'ñ':0xA4, 'Ñ':0xA5, 'ü':0x81, 'Ü':0x9A,
+  '¿':0xA8, '¡':0xAD
+};
+const REVERSE_CP437 = {};
+for(const [ch, byte] of Object.entries(TABLA_CP437)){
+  REVERSE_CP437[byte] = ch;
+}
+
+function textoABytes(texto, modo){
+  if(modo === 'raw'){
+    return Array.from(new TextEncoder().encode(texto));
+  }
+  const bytes = [];
+  for(const ch of texto){
+    const code = ch.charCodeAt(0);
+    if(code < 128){
+      bytes.push(code);
+    } else if(modo === 'cp437' && TABLA_CP437[ch] !== undefined){
+      bytes.push(TABLA_CP437[ch]);
+    } else if(modo === 'iso8859-1' && code <= 255){
+      bytes.push(code);
+    } else {
+      bytes.push(0x3F);
+    }
+  }
+  return bytes;
+}
+
+function bytesABase64(bytesArray){
+  let binario = '';
+  for(const b of bytesArray) binario += String.fromCharCode(b);
+  return btoa(binario);
+}
+
+/* ================================================================
+   ESTADO Y REFERENCIAS DEL DOM
+   ================================================================ */
+const el = (id) => document.getElementById(id);
+const logEl = el('log');
+
+function log(msg, tipo){
+  const hora = new Date().toLocaleTimeString();
+  const clase = tipo === 'error' ? 'err' : tipo === 'ok' ? 'ok' : '';
+  const linea = document.createElement('div');
+  if(clase) linea.className = clase;
+  linea.textContent = `[${hora}] ${msg}`;
+  logEl.appendChild(linea);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setEstadoConectado(conectado){
+  const status = el('status');
+  status.className = 'status ' + (conectado ? 'on' : 'off');
+  el('statusText').textContent = conectado ? 'Agente disponible' : 'Sin verificar';
+  el('btnImprimir').disabled = !conectado;
+  el('btnImprimirVisual').disabled = !conectado;
+}
+
+/* ================================================================
+   INTÉRPRETE ESC/POS → HTML (vista previa)
+   Compartido por las dos pestañas.
+   ================================================================ */
+function renderizarTicket(bytes){
+  const modoDecod = el('codificacion').value;
+  const contenedor = document.createElement('div');
+
+  let alineacion = 'left';
+  let estaNegrita = false;
+  let estaSubrayada = false;
+  let anchoX2 = false;
+  let altoX2 = false;
+  let lineaActual = null;
+  let bufferBytes = [];
+
+  function nuevaLinea(){
+    lineaActual = document.createElement('div');
+    lineaActual.className = 'linea';
+    lineaActual.style.textAlign = alineacion;
+    contenedor.appendChild(lineaActual);
+  }
+  nuevaLinea();
+
+  function decodificarBuffer(){
+    if(bufferBytes.length === 0) return '';
+    if(modoDecod === 'raw'){
+      return new TextDecoder('utf-8').decode(new Uint8Array(bufferBytes));
+    }
+    if(modoDecod === 'iso8859-1'){
+      return bufferBytes.map(b => String.fromCharCode(b)).join('');
+    }
+    return bufferBytes.map(b => b < 128 ? String.fromCharCode(b) : (REVERSE_CP437[b] || '?')).join('');
+  }
+
+  function flushBuffer(){
+    const texto = decodificarBuffer();
+    bufferBytes = [];
+    if(!texto) return;
+    const span = document.createElement('span');
+    if(estaNegrita) span.style.fontWeight = '700';
+    if(estaSubrayada) span.style.textDecoration = 'underline';
+    if(anchoX2) span.style.letterSpacing = '2px';
+    if(altoX2){ span.style.fontSize = '1.7em'; span.style.lineHeight = '1'; }
+    span.textContent = texto;
+    lineaActual.appendChild(span);
+  }
+
+  let i = 0;
+  while(i < bytes.length){
+    const b = bytes[i];
+
+    if(b === 0x1B){
+      flushBuffer();
+      const cmd = bytes[i+1];
+      if(cmd === 0x40){
+        alineacion='left'; estaNegrita=false; estaSubrayada=false; anchoX2=false; altoX2=false;
+        i += 2; continue;
+      }
+      if(cmd === 0x61){
+        const n = bytes[i+2];
+        alineacion = n===1 ? 'center' : n===2 ? 'right' : 'left';
+        lineaActual.style.textAlign = alineacion;
+        i += 3; continue;
+      }
+      if(cmd === 0x45){
+        estaNegrita = bytes[i+2] === 1;
+        i += 3; continue;
+      }
+      if(cmd === 0x2D){
+        estaSubrayada = bytes[i+2] === 1 || bytes[i+2] === 2;
+        i += 3; continue;
+      }
+      if(cmd === 0x74){
+        i += 3; continue;
+      }
+      i += 3; continue;
+    }
+
+    if(b === 0x1D){
+      flushBuffer();
+      const cmd = bytes[i+1];
+      if(cmd === 0x21){
+        const n = bytes[i+2];
+        anchoX2 = (n & 0xF0) !== 0;
+        altoX2 = (n & 0x0F) !== 0;
+        i += 3; continue;
+      }
+      if(cmd === 0x56){
+        const marca = document.createElement('div');
+        marca.className = 'marca-corte';
+        marca.textContent = '✂ · · · · · · · · · · · · · · · · · · ·';
+        contenedor.appendChild(marca);
+        nuevaLinea();
+        i += 3; continue;
+      }
+      i += 3; continue;
+    }
+
+    if(b === 0x0A){
+      flushBuffer();
+      nuevaLinea();
+      i += 1; continue;
+    }
+
+    bufferBytes.push(b);
+    i += 1;
+  }
+  flushBuffer();
+
+  return contenedor;
+}
+
+// Ajusta el ancho visual del ticket para que coincida EXACTAMENTE con
+// los caracteres por línea del papel elegido (32 u 48), usando la
+// unidad "ch" (ancho del carácter "0" en la fuente monoespaciada).
+// Los 36px extra compensan el padding izquierdo+derecho del .receipt
+// (18px cada lado) para que el ANCHO DE CONTENIDO real sea de N
+// caracteres, no el ancho total del recuadro con el padding incluido.
+function actualizarAnchoPreview(){
+  const caracteresPorLinea = parseInt(el('anchoPapel').value, 10);
+  el('receiptPreview').style.width = `calc(${caracteresPorLinea}ch + 36px)`;
+}
+
+function mostrarPreview(bytes){
+  actualizarAnchoPreview();
+  const destino = el('receiptPreview');
+  destino.innerHTML = '';
+  destino.appendChild(renderizarTicket(bytes));
+}
+
+/* ================================================================
+   COMUNICACIÓN CON EL AGENTE LOCAL (compartida por las dos pestañas)
+   ================================================================ */
+
+async function verificarConexion(){
+  const url = el('agentUrl').value.replace(/\/$/, '');
+  try{
+    const resp = await fetch(url + '/status');
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const info = await resp.json();
+    setEstadoConectado(true);
+    el('compat-warning').style.display = 'none';
+    log(`Agente encontrado (${info.sistema}).`, 'ok');
+  } catch(err){
+    setEstadoConectado(false);
+    el('compat-warning').style.display = 'block';
+    log('No se pudo contactar al agente: ' + err.message, 'error');
+  }
+}
+
+async function enviarBytesAImprimir(bytes){
+  const url = el('agentUrl').value.replace(/\/$/, '');
+  const impresora = el('printerName').value.trim();
+  const dataB64 = bytesABase64(bytes);
+  try{
+    const resp = await fetch(url + '/print', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printer: impresora, data: dataB64 })
+    });
+    const resultado = await resp.json();
+    if(resultado.ok){
+      log(`Ticket enviado (${bytes.length} bytes). ${resultado.message}`, 'ok');
+    } else {
+      log('El agente reportó un error: ' + resultado.message, 'error');
+    }
+  } catch(err){
+    log('Error de red al contactar el agente: ' + err.message, 'error');
+  }
+}
+
+/* ================================================================
+   PESTAÑA "PROBADOR" — modo manual / modo PHP
+   ================================================================ */
+
+let origenActual = 'manual';
+let datosPhpBase64 = null;
+
+function cambiarOrigen(nuevoOrigen){
+  origenActual = nuevoOrigen;
+  el('bloqueManual').style.display = nuevoOrigen === 'manual' ? 'block' : 'none';
+  el('bloquePhp').style.display = nuevoOrigen === 'php' ? 'block' : 'none';
+}
+
+function construirTicket(){
+  const modo = el('codificacion').value;
+  const texto = el('contenido').value;
+  const cortar = el('cortarAlFinal').checked;
+
+  let bytes = [];
+  bytes.push(...CMD_INIT);
+  bytes.push(...CMD_CODEPAGE_CP437);
+  bytes.push(...alinear(0));
+  bytes.push(...textoABytes(texto, modo));
+  bytes.push(0x0A, 0x0A, 0x0A);
+
+  if(cortar){
+    bytes.push(...COMANDO_CORTE_TOTAL);
+  }
+  return bytes;
+}
+
+async function cargarDesdePhp(){
+  const url = el('phpUrl').value.trim();
+  const estadoEl = el('phpCargaEstado');
+  if(!url){
+    estadoEl.textContent = 'Ingresa una URL primero.';
+    return;
+  }
+  estadoEl.textContent = 'Cargando...';
+  try{
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    if(!json.data) throw new Error('La respuesta no trae el campo "data"');
+
+    datosPhpBase64 = json.data;
+    const bytes = Uint8Array.from(atob(datosPhpBase64), c => c.charCodeAt(0));
+
+    estadoEl.textContent = `Cargado: ${bytes.length} bytes desde ${url}`;
+    mostrarPreview(Array.from(bytes));
+    log(`Ticket cargado desde PHP (${bytes.length} bytes). Revisa la vista previa antes de imprimir.`, 'ok');
+  } catch(err){
+    datosPhpBase64 = null;
+    estadoEl.textContent = 'Error al cargar: ' + err.message;
+    log('Error al cargar desde PHP: ' + err.message + ' (revisa CORS si es un error de red)', 'error');
+  }
+}
+
+function actualizarPreview(){
+  const bytes = construirTicket();
+  mostrarPreview(bytes);
+}
+
+async function imprimirTicket(){
+  let bytes;
+  if(origenActual === 'php'){
+    if(!datosPhpBase64){
+      log('Primero carga un ticket desde tu endpoint PHP.', 'error');
+      return;
+    }
+    bytes = Array.from(Uint8Array.from(atob(datosPhpBase64), c => c.charCodeAt(0)));
+  } else {
+    bytes = construirTicket();
+  }
+  await enviarBytesAImprimir(bytes);
+}
+
+/* ================================================================
+   PESTAÑA "EDITOR VISUAL ESC/POS"
+   ================================================================ */
+
+let bloques = [
+  { tipo:'texto', alineacion:'center', tamano:'ambos', segmentos:[
+    { texto:'MI TIENDA', negrita:true, subrayado:false }
+  ]},
+  { tipo:'separador', caracter:'-' },
+  { tipo:'texto', alineacion:'left', tamano:'normal', segmentos:[
+    { texto:'Producto A          x1     $1000', negrita:false, subrayado:false }
+  ]},
+  { tipo:'texto', alineacion:'left', tamano:'normal', segmentos:[
+    { texto:'Producto B          x2     $2000', negrita:false, subrayado:false }
+  ]},
+  { tipo:'separador', caracter:'-' },
+  { tipo:'texto', alineacion:'left', tamano:'normal', segmentos:[
+    { texto:'TOTAL: ', negrita:true, subrayado:false },
+    { texto:'                   $3000', negrita:false, subrayado:false }
+  ]},
+  { tipo:'salto' },
+  { tipo:'texto', alineacion:'center', tamano:'normal', segmentos:[
+    { texto:'Gracias por su compra ñÑ áéíóú', negrita:false, subrayado:false }
+  ]},
+  { tipo:'corte' }
+];
+
+function resumenBloque(b){
+  if(b.tipo === 'texto'){
+    const textoCompleto = b.segmentos.map(s => s.texto).join('');
+    const formatos = new Set();
+    b.segmentos.forEach(s => {
+      if(s.negrita) formatos.add('negrita');
+      if(s.subrayado) formatos.add('subrayado');
+    });
+    const partes = [];
+    if(b.alineacion !== 'left') partes.push(b.alineacion === 'center' ? 'centro' : 'derecha');
+    if(b.tamano !== 'normal') partes.push(b.tamano);
+    if(formatos.size) partes.push([...formatos].join('+'));
+    if(b.segmentos.length > 1) partes.push(`${b.segmentos.length} segmentos`);
+    const extra = partes.length ? ` (${partes.join(', ')})` : '';
+    const previewTxt = textoCompleto.length > 30 ? textoCompleto.slice(0,30) + '…' : textoCompleto;
+    return `Texto: "${previewTxt}"${extra}`;
+  }
+  if(b.tipo === 'separador') return `Línea separadora ("${b.caracter}")`;
+  if(b.tipo === 'salto') return 'Salto de línea';
+  if(b.tipo === 'corte') return '✂ Corte de papel';
+  return b.tipo;
+}
+
+function renderizarListaBloques(){
+  const cont = el('listaBloques');
+  cont.innerHTML = '';
+  if(bloques.length === 0){
+    cont.innerHTML = '<p class="field-note">Todavía no agregaste ningún bloque.</p>';
+    return;
+  }
+  bloques.forEach((bloque, idx) => {
+    const fila = document.createElement('div');
+    fila.className = 'bloque-item';
+
+    const resumen = document.createElement('span');
+    resumen.className = 'bloque-resumen';
+    resumen.textContent = resumenBloque(bloque);
+    fila.appendChild(resumen);
+
+    const controles = document.createElement('span');
+    controles.className = 'bloque-controles';
+    controles.innerHTML =
+      `<button type="button" data-accion="subir" data-idx="${idx}" title="Subir">↑</button>` +
+      `<button type="button" data-accion="bajar" data-idx="${idx}" title="Bajar">↓</button>` +
+      `<button type="button" data-accion="eliminar" data-idx="${idx}" title="Eliminar">✕</button>`;
+    fila.appendChild(controles);
+
+    cont.appendChild(fila);
+  });
+}
+
+// Convierte los bloques del editor visual a bytes ESC/POS, agrupando
+// los comandos de formato solo cuando cambian respecto al segmento/
+// bloque anterior (evita repetir comandos innecesarios).
+function bloquesABytes(listaBloques){
+  const anchoLinea = parseInt(el('anchoPapel').value, 10);
+  const modo = el('codificacion').value;
+  let bytes = [...CMD_INIT, ...CMD_CODEPAGE_CP437];
+
+  let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal';
+  const mapaTamano = { normal:0x00, ancho:0x10, alto:0x01, ambos:0x11 };
+
+  function asegurarAlineacion(a){
+    if(a !== alineacionActual){
+      const n = a === 'center' ? 1 : a === 'right' ? 2 : 0;
+      bytes.push(...alinear(n));
+      alineacionActual = a;
+    }
+  }
+  function asegurarNegrita(on){
+    if(on !== negritaActual){
+      bytes.push(...negrita(on));
+      negritaActual = on;
+    }
+  }
+  function asegurarSubrayado(on){
+    if(on !== subrayadoActual){
+      bytes.push(...subrayado(on));
+      subrayadoActual = on;
+    }
+  }
+  function asegurarTamano(t){
+    if(t !== tamanoActual){
+      bytes.push(...tamano(mapaTamano[t] ?? 0x00));
+      tamanoActual = t;
+    }
+  }
+
+  for(const b of listaBloques){
+    if(b.tipo === 'texto'){
+      asegurarAlineacion(b.alineacion);
+      asegurarTamano(b.tamano);
+      for(const seg of b.segmentos){
+        asegurarNegrita(seg.negrita);
+        asegurarSubrayado(seg.subrayado);
+        bytes.push(...textoABytes(seg.texto, modo));
+      }
+      bytes.push(0x0A);
+    } else if(b.tipo === 'separador'){
+      asegurarAlineacion('left');
+      asegurarNegrita(false);
+      asegurarSubrayado(false);
+      asegurarTamano('normal');
+      const linea = (b.caracter || '-').repeat(anchoLinea);
+      bytes.push(...textoABytes(linea, modo));
+      bytes.push(0x0A);
+    } else if(b.tipo === 'salto'){
+      bytes.push(0x0A);
+    } else if(b.tipo === 'corte'){
+      bytes.push(...COMANDO_CORTE_TOTAL);
+    }
+  }
+  return bytes;
+}
+
+// Renderiza la vista previa directo desde los bloques/segmentos, sin
+// pasar por bytes ESC/POS — más simple que armar los bytes y luego
+// reinterpretarlos, y da el mismo resultado visual.
+function renderizarBloquesDirecto(listaBloques){
+  const anchoLinea = parseInt(el('anchoPapel').value, 10);
+  const contenedor = document.createElement('div');
+
+  function nuevaLineaEn(alineacion){
+    const linea = document.createElement('div');
+    linea.className = 'linea';
+    linea.style.textAlign = alineacion;
+    contenedor.appendChild(linea);
+    return linea;
+  }
+
+  for(const b of listaBloques){
+    if(b.tipo === 'texto'){
+      const linea = nuevaLineaEn(b.alineacion);
+      for(const seg of b.segmentos){
+        const span = document.createElement('span');
+        if(seg.negrita) span.style.fontWeight = '700';
+        if(seg.subrayado) span.style.textDecoration = 'underline';
+        if(b.tamano === 'ancho' || b.tamano === 'ambos') span.style.letterSpacing = '2px';
+        if(b.tamano === 'alto' || b.tamano === 'ambos'){ span.style.fontSize = '1.7em'; span.style.lineHeight = '1'; }
+        span.textContent = seg.texto;
+        linea.appendChild(span);
+      }
+    } else if(b.tipo === 'separador'){
+      nuevaLineaEn('left').textContent = (b.caracter || '-').repeat(anchoLinea);
+    } else if(b.tipo === 'salto'){
+      nuevaLineaEn('left');
+    } else if(b.tipo === 'corte'){
+      const marca = document.createElement('div');
+      marca.className = 'marca-corte';
+      marca.textContent = '✂ · · · · · · · · · · · · · · · · · · ·';
+      contenedor.appendChild(marca);
+    }
+  }
+  return contenedor;
+}
+
+function actualizarPreviewVisual(){
+  actualizarAnchoPreview();
+  const destino = el('receiptPreview');
+  destino.innerHTML = '';
+  destino.appendChild(renderizarBloquesDirecto(bloques));
+}
+
+function phpEscapeString(str){
+  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+// Genera código PHP equivalente a los bloques actuales, listo para
+// pegar en tu generar_ticket.php (mismo formato de respuesta JSON
+// que espera esta página en la pestaña "Probador").
+function bloquesAPhpCodigo(listaBloques){
+  const anchoLinea = parseInt(el('anchoPapel').value, 10);
+  const lineas = [];
+  lineas.push('<?php');
+  lineas.push('// Generado por el Editor Visual ESC/POS');
+  lineas.push('$ESC = "\\x1B";');
+  lineas.push('$GS  = "\\x1D";');
+  lineas.push('');
+  lineas.push('$ticket  = $ESC . "@";           // inicializar impresora');
+  lineas.push('$ticket .= $ESC . "t" . "\\x00";  // code page CP437');
+
+  let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal';
+  const mapaTamanoHex = { normal:'\\x00', ancho:'\\x10', alto:'\\x01', ambos:'\\x11' };
+
+  for(const b of listaBloques){
+    if(b.tipo === 'texto'){
+      if(b.alineacion !== alineacionActual){
+        const n = b.alineacion === 'center' ? '\\x01' : b.alineacion === 'right' ? '\\x02' : '\\x00';
+        lineas.push(`$ticket .= $ESC . "a" . "${n}";  // alinear ${b.alineacion}`);
+        alineacionActual = b.alineacion;
+      }
+      if(b.tamano !== tamanoActual){
+        lineas.push(`$ticket .= $GS . "!" . "${mapaTamanoHex[b.tamano]}";  // tamaño ${b.tamano}`);
+        tamanoActual = b.tamano;
+      }
+      for(const seg of b.segmentos){
+        if(seg.negrita !== negritaActual){
+          lineas.push(`$ticket .= $ESC . "E" . "${seg.negrita ? '\\x01' : '\\x00'}";  // negrita ${seg.negrita ? 'ON' : 'OFF'}`);
+          negritaActual = seg.negrita;
+        }
+        if(seg.subrayado !== subrayadoActual){
+          lineas.push(`$ticket .= $ESC . "-" . "${seg.subrayado ? '\\x01' : '\\x00'}";  // subrayado ${seg.subrayado ? 'ON' : 'OFF'}`);
+          subrayadoActual = seg.subrayado;
+        }
+        lineas.push(`$ticket .= "${phpEscapeString(seg.texto)}";`);
+      }
+      lineas.push('$ticket .= "\\n";');
+    } else if(b.tipo === 'separador'){
+      if(alineacionActual !== 'left'){
+        lineas.push('$ticket .= $ESC . "a" . "\\x00";  // alinear izquierda');
+        alineacionActual = 'left';
+      }
+      if(negritaActual){
+        lineas.push('$ticket .= $ESC . "E" . "\\x00";  // negrita OFF');
+        negritaActual = false;
+      }
+      if(subrayadoActual){
+        lineas.push('$ticket .= $ESC . "-" . "\\x00";  // subrayado OFF');
+        subrayadoActual = false;
+      }
+      if(tamanoActual !== 'normal'){
+        lineas.push('$ticket .= $GS . "!" . "\\x00";  // tamaño normal');
+        tamanoActual = 'normal';
+      }
+      const car = phpEscapeString(b.caracter || '-');
+      lineas.push(`$ticket .= str_repeat("${car}", ${anchoLinea}) . "\\n";`);
+    } else if(b.tipo === 'salto'){
+      lineas.push('$ticket .= "\\n";');
+    } else if(b.tipo === 'corte'){
+      lineas.push('$ticket .= $GS . "V" . "\\x00";  // corte de papel');
+    }
+  }
+
+  lineas.push('');
+  lineas.push("header('Content-Type: application/json');");
+  lineas.push("echo json_encode(['data' => base64_encode($ticket)]);");
+
+  return lineas.join('\n');
+}
+
+/* ================================================================
+   EVENTOS — pestañas
+   ================================================================ */
+function activarTab(tabId){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === tabId));
+}
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => activarTab(btn.dataset.tab));
+});
+
+/* ================================================================
+   EVENTOS — agente / probador
+   ================================================================ */
+el('btnVerificar').addEventListener('click', verificarConexion);
+el('btnImprimir').addEventListener('click', imprimirTicket);
+el('btnPreview').addEventListener('click', actualizarPreview);
+el('btnCargarPhp').addEventListener('click', cargarDesdePhp);
+el('origenManual').addEventListener('change', () => cambiarOrigen('manual'));
+el('origenPhp').addEventListener('change', () => cambiarOrigen('php'));
+el('anchoPapel').addEventListener('change', actualizarAnchoPreview);
+
+/* ================================================================
+   EVENTOS — editor visual
+   ================================================================ */
+el('nuevoTipoBloque').addEventListener('change', () => {
+  const tipo = el('nuevoTipoBloque').value;
+  el('camposTexto').style.display = tipo === 'texto' ? 'block' : 'none';
+  el('camposSeparador').style.display = tipo === 'separador' ? 'block' : 'none';
+});
+
+/* ----------------------------------------------------------------
+   SEGMENTOS EN BORRADOR — el formulario "Agregar bloque" arma una
+   línea que puede tener varios trozos de texto con formato distinto
+   cada uno (negrita/subrayado), antes de confirmarla como un bloque
+   nuevo.
+   ---------------------------------------------------------------- */
+let segmentosBorrador = [{ texto:'', negrita:false, subrayado:false }];
+
+function segmentoVacio(){
+  return { texto:'', negrita:false, subrayado:false };
+}
+
+function renderizarSegmentosBorrador(){
+  const cont = el('listaSegmentos');
+  cont.innerHTML = '';
+  segmentosBorrador.forEach((seg, idx) => {
+    const fila = document.createElement('div');
+    fila.className = 'segmento-item';
+    fila.innerHTML =
+      `<input type="text" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento">` +
+      `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="negrita"> N</label>` +
+      `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="subrayado"> S</label>` +
+      `<button type="button" class="segmento-quitar" data-idx="${idx}" title="Quitar segmento">✕</button>`;
+    fila.querySelector('.segmento-texto').value = seg.texto;
+    fila.querySelector('[data-campo="negrita"]').checked = seg.negrita;
+    fila.querySelector('[data-campo="subrayado"]').checked = seg.subrayado;
+    cont.appendChild(fila);
+  });
+}
+renderizarSegmentosBorrador();
+
+el('listaSegmentos').addEventListener('input', (e) => {
+  if(e.target.classList.contains('segmento-texto')){
+    segmentosBorrador[parseInt(e.target.dataset.idx, 10)].texto = e.target.value;
+  }
+});
+el('listaSegmentos').addEventListener('change', (e) => {
+  if(e.target.classList.contains('segmento-check')){
+    const idx = parseInt(e.target.dataset.idx, 10);
+    segmentosBorrador[idx][e.target.dataset.campo] = e.target.checked;
+  }
+});
+el('listaSegmentos').addEventListener('click', (e) => {
+  const btn = e.target.closest('.segmento-quitar');
+  if(!btn) return;
+  if(segmentosBorrador.length <= 1) return; // siempre dejar al menos un segmento
+  segmentosBorrador.splice(parseInt(btn.dataset.idx, 10), 1);
+  renderizarSegmentosBorrador();
+});
+el('btnAgregarSegmento').addEventListener('click', () => {
+  segmentosBorrador.push(segmentoVacio());
+  renderizarSegmentosBorrador();
+});
+
+el('btnAgregarBloque').addEventListener('click', () => {
+  const tipo = el('nuevoTipoBloque').value;
+  let bloque;
+  if(tipo === 'texto'){
+    const segmentosValidos = segmentosBorrador.filter(s => s.texto.length > 0);
+    if(segmentosValidos.length === 0){
+      log('Escribe texto en al menos un segmento antes de agregar el bloque.', 'error');
+      return;
+    }
+    bloque = {
+      tipo: 'texto',
+      alineacion: el('campoAlineacion').value,
+      tamano: el('campoTamano').value,
+      segmentos: segmentosValidos.map(s => ({...s}))
+    };
+    segmentosBorrador = [segmentoVacio()];
+    renderizarSegmentosBorrador();
+  } else if(tipo === 'separador'){
+    bloque = { tipo: 'separador', caracter: el('campoCaracter').value || '-' };
+  } else {
+    bloque = { tipo };
+  }
+  bloques.push(bloque);
+  renderizarListaBloques();
+  actualizarPreviewVisual();
+});
+
+el('listaBloques').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-accion]');
+  if(!btn) return;
+  const idx = parseInt(btn.dataset.idx, 10);
+  const accion = btn.dataset.accion;
+  if(accion === 'subir' && idx > 0){
+    [bloques[idx-1], bloques[idx]] = [bloques[idx], bloques[idx-1]];
+  } else if(accion === 'bajar' && idx < bloques.length - 1){
+    [bloques[idx+1], bloques[idx]] = [bloques[idx], bloques[idx+1]];
+  } else if(accion === 'eliminar'){
+    bloques.splice(idx, 1);
+  }
+  renderizarListaBloques();
+  actualizarPreviewVisual();
+});
+
+el('btnLimpiarBloques').addEventListener('click', () => {
+  bloques = [];
+  renderizarListaBloques();
+  actualizarPreviewVisual();
+});
+
+el('btnImprimirVisual').addEventListener('click', async () => {
+  await enviarBytesAImprimir(bloquesABytes(bloques));
+});
+
+el('btnGenerarPhp').addEventListener('click', () => {
+  const codigo = bloquesAPhpCodigo(bloques);
+  const area = el('codigoPhpGenerado');
+  area.value = codigo;
+  area.style.display = 'block';
+  el('btnCopiarPhp').style.display = 'block';
+});
+
+el('btnCopiarPhp').addEventListener('click', async () => {
+  const area = el('codigoPhpGenerado');
+  try{
+    await navigator.clipboard.writeText(area.value);
+    log('Código PHP copiado al portapapeles.', 'ok');
+  } catch(err){
+    area.select();
+    log('No se pudo copiar automáticamente. Selecciona el texto y usa Ctrl+C.', 'error');
+  }
+});
+
+/* ================================================================
+   INICIALIZACIÓN
+   ================================================================ */
+renderizarListaBloques();
+actualizarPreviewVisual(); // la pestaña por defecto es el Editor Visual
+
+const parametros = new URLSearchParams(location.search);
+const phpUrlInicial = parametros.get('php_url');
+if(phpUrlInicial){
+  el('phpUrl').value = phpUrlInicial;
+  el('origenPhp').checked = true;
+  cambiarOrigen('php');
+  activarTab('tabProbador');
+  log('URL de PHP recibida por parámetro, cargando ticket automáticamente...');
+  cargarDesdePhp();
+}
+</script>
+
+</body>
+</html>
