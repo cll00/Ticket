@@ -256,6 +256,7 @@
     background-position: 0 0, 6px 0;
   }
   .receipt .linea{ min-height:1.4em; }
+  .receipt .linea.fuente-b{ font-size:75%; } /* Fuente B ESC/POS (9x17): más estrecha y baja → 64/42 car/línea */
   .receipt .marca-corte{
     margin:10px 0;
     text-align:center;
@@ -409,11 +410,25 @@
               </select>
             </div>
           </div>
+          <div class="row">
+            <div>
+              <label for="campoFuente">Fuente (toda la línea)</label>
+              <select id="campoFuente">
+                <option value="A" selected>Fuente A</option>
+                <option value="B">Fuente B</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div id="camposSeparador" style="display:none">
           <label for="campoCaracter">Carácter repetido</label>
           <input type="text" id="campoCaracter" maxlength="1" value="-">
+          <label for="campoFuenteSeparador">Fuente</label>
+          <select id="campoFuenteSeparador">
+            <option value="A" selected>Fuente A</option>
+            <option value="B">Fuente B</option>
+          </select>
         </div>
 
         <button id="btnAgregarBloque" class="btn-secondary btn-block">+ Agregar bloque</button>
@@ -522,6 +537,7 @@ const alinear = (n) => [ESC, 0x61, n];
 const negrita = (on) => [ESC, 0x45, on ? 1 : 0];
 const subrayado = (on) => [ESC, 0x2D, on ? 1 : 0]; // ESC - n : 0=off, 1=subrayado simple
 const tamano = (n) => [GS, 0x21, n];
+const fuente = (n) => [ESC, 0x4D, n]; // ESC M n : 0=Fuente A (12x24), 1=Fuente B (9x17) — story: e01s01
 
 const COMANDO_CORTE_TOTAL   = [GS, 0x56, 0x00];
 const COMANDO_CORTE_PARCIAL = [GS, 0x56, 0x01];
@@ -563,6 +579,13 @@ function bytesABase64(bytesArray){
   let binario = '';
   for(const b of bytesArray) binario += String.fromCharCode(b);
   return btoa(binario);
+}
+
+// Caracteres que caben por línea según el tipo de fuente ESC/POS.
+// Fuente A: 48 (80mm) / 32 (58mm). Fuente B (9x17, más estrecha): 64 (80mm) / 42 (58mm).
+function cplSegunFuente(fuente, anchoPapel){
+  const base = parseInt(anchoPapel, 10);
+  return fuente === 'B' ? (base === 48 ? 64 : 42) : base;
 }
 
 /* ================================================================
@@ -876,13 +899,14 @@ function resumenBloque(b){
     const partes = [];
     if(b.alineacion !== 'left') partes.push(b.alineacion === 'center' ? 'centro' : 'derecha');
     if(b.tamano !== 'normal') partes.push(b.tamano);
+    if(b.fuente === 'B') partes.push('Fuente B');
     if(formatos.size) partes.push([...formatos].join('+'));
     if(b.segmentos.length > 1) partes.push(`${b.segmentos.length} segmentos`);
     const extra = partes.length ? ` (${partes.join(', ')})` : '';
     const previewTxt = textoCompleto.length > 30 ? textoCompleto.slice(0,30) + '…' : textoCompleto;
     return `Texto: "${previewTxt}"${extra}`;
   }
-  if(b.tipo === 'separador') return `Línea separadora ("${b.caracter}")`;
+  if(b.tipo === 'separador') return `Línea separadora ("${b.caracter}")${b.fuente === 'B' ? ' (Fuente B)' : ''}`;
   if(b.tipo === 'salto') return 'Salto de línea';
   if(b.tipo === 'corte') return '✂ Corte de papel';
   return b.tipo;
@@ -928,7 +952,7 @@ function bloquesABytes(listaBloques){
   const modo = el('codificacion').value;
   let bytes = [...CMD_INIT, ...CMD_CODEPAGE_CP437];
 
-  let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal';
+  let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal', fuenteActual = 'A';
   const mapaTamano = { normal:0x00, ancho:0x10, alto:0x01, ambos:0x11 };
 
   function asegurarAlineacion(a){
@@ -961,6 +985,7 @@ function bloquesABytes(listaBloques){
     if(b.tipo === 'texto'){
       asegurarAlineacion(b.alineacion);
       asegurarTamano(b.tamano);
+      asegurarFuente(b.fuente);
       for(const seg of b.segmentos){
         asegurarNegrita(seg.negrita);
         asegurarSubrayado(seg.subrayado);
@@ -972,7 +997,8 @@ function bloquesABytes(listaBloques){
       asegurarNegrita(false);
       asegurarSubrayado(false);
       asegurarTamano('normal');
-      const linea = (b.caracter || '-').repeat(anchoLinea);
+      asegurarFuente(b.fuente);
+      const linea = (b.caracter || '-').repeat(cplSegunFuente(b.fuente, anchoLinea));
       bytes.push(...textoABytes(linea, modo));
       bytes.push(0x0A);
     } else if(b.tipo === 'salto'){
@@ -1002,6 +1028,7 @@ function renderizarBloquesDirecto(listaBloques){
   for(const b of listaBloques){
     if(b.tipo === 'texto'){
       const linea = nuevaLineaEn(b.alineacion);
+      if(b.fuente === 'B') linea.classList.add('fuente-b');
       for(const seg of b.segmentos){
         const span = document.createElement('span');
         if(seg.negrita) span.style.fontWeight = '700';
@@ -1012,7 +1039,9 @@ function renderizarBloquesDirecto(listaBloques){
         linea.appendChild(span);
       }
     } else if(b.tipo === 'separador'){
-      nuevaLineaEn('left').textContent = (b.caracter || '-').repeat(anchoLinea);
+      const lineaSep = nuevaLineaEn('left');
+      if(b.fuente === 'B') lineaSep.classList.add('fuente-b');
+      lineaSep.textContent = (b.caracter || '-').repeat(cplSegunFuente(b.fuente, anchoLinea));
     } else if(b.tipo === 'salto'){
       nuevaLineaEn('left');
     } else if(b.tipo === 'corte'){
@@ -1050,7 +1079,7 @@ function bloquesAPhpCodigo(listaBloques){
   lineas.push('$ticket  = $ESC . "@";           // inicializar impresora');
   lineas.push('$ticket .= $ESC . "t" . "\\x00";  // code page CP437');
 
-  let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal';
+  let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal', fuenteActual = 'A';
   const mapaTamanoHex = { normal:'\\x00', ancho:'\\x10', alto:'\\x01', ambos:'\\x11' };
 
   for(const b of listaBloques){
@@ -1063,6 +1092,13 @@ function bloquesAPhpCodigo(listaBloques){
       if(b.tamano !== tamanoActual){
         lineas.push(`$ticket .= $GS . "!" . "${mapaTamanoHex[b.tamano]}";  // tamaño ${b.tamano}`);
         tamanoActual = b.tamano;
+      }
+      if((b.fuente||'A') === 'B' && fuenteActual !== '\\x01'){
+        lineas.push('$ticket .= $ESC . "M" . "\\x01";  // Fuente B');
+        fuenteActual = '\\x01';
+      } else if((b.fuente||'A') !== 'B' && fuenteActual !== '\\x00'){
+        lineas.push('$ticket .= $ESC . "M" . "\\x00";  // Fuente A');
+        fuenteActual = '\\x00';
       }
       for(const seg of b.segmentos){
         if(seg.negrita !== negritaActual){
@@ -1093,8 +1129,13 @@ function bloquesAPhpCodigo(listaBloques){
         lineas.push('$ticket .= $GS . "!" . "\\x00";  // tamaño normal');
         tamanoActual = 'normal';
       }
+      if(fuenteActual !== (b.fuente === 'B' ? '\\x01' : '\\x00')){
+        const hexSep = b.fuente === 'B' ? '\\x01' : '\\x00';
+        lineas.push(`$ticket .= $ESC . "M" . "${hexSep}";  // ${b.fuente === 'B' ? 'Fuente B' : 'Fuente A'}`);
+        fuenteActual = hexSep;
+      }
       const car = phpEscapeString(b.caracter || '-');
-      lineas.push(`$ticket .= str_repeat("${car}", ${anchoLinea}) . "\\n";`);
+      lineas.push(`$ticket .= str_repeat("${car}", ${cplSegunFuente(b.fuente, anchoLinea)}) . "\\n";`);
     } else if(b.tipo === 'salto'){
       lineas.push('$ticket .= "\\n";');
     } else if(b.tipo === 'corte'){
@@ -1179,7 +1220,9 @@ function resetearFormulario(){
   segmentosBorrador = [segmentoVacio()];
   el('campoAlineacion').value = 'left';
   el('campoTamano').value = 'normal';
+  el('campoFuente').value = 'A';
   el('campoCaracter').value = '-';
+  el('campoFuenteSeparador').value = 'A';
   renderizarSegmentosBorrador();
 }
 
@@ -1202,9 +1245,11 @@ function cargarBloqueEnFormulario(idx){
       .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado }));
     el('campoAlineacion').value = b.alineacion || 'left';
     el('campoTamano').value = b.tamano || 'normal';
+    el('campoFuente').value = b.fuente || 'A';
     renderizarSegmentosBorrador();
   } else if(b.tipo === 'separador'){
     el('campoCaracter').value = b.caracter || '-';
+    el('campoFuenteSeparador').value = b.fuente || 'A';
   }
   el('btnAgregarBloque').textContent = 'Guardar cambios';
   el('btnCancelarEdicion').style.display = 'block';
@@ -1246,12 +1291,13 @@ el('btnAgregarBloque').addEventListener('click', () => {
       tipo: 'texto',
       alineacion: el('campoAlineacion').value,
       tamano: el('campoTamano').value,
+      fuente: el('campoFuente').value || 'A',
       segmentos: segmentosValidos.map(s => ({...s}))
     };
     segmentosBorrador = [segmentoVacio()];
     renderizarSegmentosBorrador();
   } else if(tipo === 'separador'){
-    bloque = { tipo: 'separador', caracter: el('campoCaracter').value || '-' };
+    bloque = { tipo: 'separador', caracter: el('campoCaracter').value || '-', fuente: el('campoFuenteSeparador').value || 'A' };
   } else {
     bloque = { tipo };
   }
