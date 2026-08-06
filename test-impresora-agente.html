@@ -485,7 +485,7 @@
 
       <section class="panel">
         <h2>Exportar</h2>
-        <button id="btnImprimirVisual" class="btn-primary btn-block" disabled>Imprimir este ticket</button>
+        <button id="btnImprimirVisual" class="btn-primary btn-block" disabled>Imprimir ticket</button>
         <button id="btnGenerarPhp" class="btn-secondary btn-block">Generar código PHP</button>
         <textarea id="codigoPhpGenerado" rows="10" readonly style="display:none; margin-top:10px; font-size:11px;"></textarea>
         <button id="btnCopiarPhp" class="btn-secondary btn-block" style="display:none">Copiar al portapapeles</button>
@@ -1137,6 +1137,13 @@ function bloquesABytes(listaBloques){
       tamanoActual = t;
     }
   }
+  function asegurarFuente(f){
+    const fNorm = f === 'B' ? 'B' : 'A';
+    if(fNorm !== fuenteActual){
+      bytes.push(...fuente(fNorm === 'B' ? 1 : 0)); // ESC M n : 0=A, 1=B — fix e03-bug (asegurarFuente no definida)
+      fuenteActual = fNorm;
+    }
+  }
 
   for(const b of listaBloques){
     if(b.tipo === 'texto'){
@@ -1172,10 +1179,18 @@ function bloquesABytes(listaBloques){
       bytes.push(...GS_H_HRI(hri));
       const m = MAPA_BARRAS[b.simbolo] ?? 4;
       const dat = textoAsciiBytes(b.datos || '');
-      bytes.push(GS, 0x6B, m, dat.length, ...dat, 0x00); // GS k m n d..d NUL
+      if(b.simbolo === 'code128'){
+        bytes.push(GS, 0x6B, m, dat.length, ...dat); // CODE128: GS k 69 n data
+      } else {
+        bytes.push(GS, 0x6B, m, ...dat, 0x00); // CODE39/EAN/UPC: GS k m data NUL — validado en EPSON TM-T20II
+      }
     } else if(b.tipo === 'qr'){
       asegurarAlineacion(b.alineacion || 'center');
       bytes.push(...bytesQR(b.datos || '', b.tamano, b.correccion));
+      if(b.mostrarDatos !== false){
+        bytes.push(...textoABytes(b.datos || '', modo)); // texto del contenido bajo el QR
+        bytes.push(0x0A);
+      }
     }
   }
   return bytes;
@@ -1375,7 +1390,11 @@ function bloquesAPhpCodigo(listaBloques){
       lineas.push(`$ticket .= $GS . "H" . chr(${hri});  // texto HRI`);
       const m = MAPA_BARRAS[b.simbolo] ?? 4;
       const n = (b.datos || '').length;
-      lineas.push(`$ticket .= $GS . "k" . chr(${m}) . chr(${n}) . "${phpEscapeString(b.datos)}" . "\\x00";  // código de barras ${ETIQUETA_BARRAS[b.simbolo] || b.simbolo}`);
+      if(b.simbolo === 'code128'){
+        lineas.push(`$ticket .= $GS . "k" . chr(${m}) . chr(${n}) . "${phpEscapeString(b.datos)}";  // código de barras CODE128`);
+      } else {
+        lineas.push(`$ticket .= $GS . "k" . chr(${m}) . "${phpEscapeString(b.datos)}" . "\\x00";  // código de barras ${ETIQUETA_BARRAS[b.simbolo] || b.simbolo} (data NUL)`);
+      }
     } else if(b.tipo === 'qr'){
       const alBean = b.alineacion || 'center';
       if(alBean !== alineacionActual){
@@ -1391,6 +1410,10 @@ function bloquesAPhpCodigo(listaBloques){
       lineas.push(`$ticket .= $GS . "(" . "k" . chr(3) . chr(0) . chr(0x31) . chr(0x45) . chr(${ec});  // QR corrección`);
       lineas.push(`$ticket .= $GS . "(" . "k" . chr(strlen("${dato}") + 3) . chr(0) . chr(0x31) . chr(0x50) . chr(0x30) . "${dato}";  // QR datos`);
       lineas.push(`$ticket .= $GS . "(" . "k" . chr(3) . chr(0) . chr(0x31) . chr(0x51) . chr(0x30);  // QR imprimir`);
+      if(b.mostrarDatos !== false){
+        lineas.push(`$ticket .= "${dato}";  // QR contenido bajo el código`);
+        lineas.push('$ticket .= "\\n";');
+      }
     }
   }
 
