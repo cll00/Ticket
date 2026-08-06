@@ -303,66 +303,12 @@
   <div class="col">
 
     <!-- ------------------------------------------------------------
-         SECCIÓN 1 — CONEXIÓN CON EL AGENTE LOCAL (compartida por
-         las dos pestañas, ya que ambas terminan enviando el mismo
-         tipo de bytes al mismo agente).
-         ------------------------------------------------------------ -->
-    <section class="panel">
-      <h2>1. Agente local</h2>
-      <p class="hint">El agente debe estar corriendo en la misma PC que el navegador.</p>
-
-      <label for="agentUrl">URL del agente</label>
-      <input type="text" id="agentUrl" value="http://127.0.0.1:9100">
-
-      <label for="printerName">Nombre de la impresora</label>
-      <input type="text" id="printerName" placeholder="Vacío = usar la predeterminada del sistema">
-      <div class="field-note">
-        Windows: nombre exacto tal como aparece en "Impresoras y escáneres".
-        Linux: nombre de la cola CUPS (revisa con "lpstat -p").
-      </div>
-
-      <button id="btnVerificar" class="btn-primary btn-block">Verificar conexión</button>
-
-      <div class="status off" id="status">
-        <span class="dot"></span>
-        <span id="statusText">Sin verificar</span>
-      </div>
-      <div class="field-note">
-        La primera vez, el navegador puede pedir permiso para "acceder
-        a dispositivos en tu red local" — acéptalo, es normal.
-      </div>
-    </section>
-
-    <!-- ------------------------------------------------------------
-         SECCIÓN 2 — FORMATO DE PAPEL (compartida). Define el ancho
-         de línea usado por los separadores del editor visual, y la
-         codificación usada para decodificar acentos tanto del editor
-         visual como del contenido que llega desde PHP.
-         ------------------------------------------------------------ -->
-    <section class="panel">
-      <h2>2. Formato de papel</h2>
-      <p class="hint">Aplica a las dos pestañas: define ancho de línea y codificación de acentos.</p>
-
-      <label for="anchoPapel">Ancho de papel</label>
-      <select id="anchoPapel">
-        <option value="32">58 mm (32 caracteres)</option>
-        <option value="48" selected>80 mm (48 caracteres)</option>
-      </select>
-
-      <label for="codificacion">Codificación (code page ESC/POS)</label>
-      <select id="codificacion">
-        <option value="cp437" selected>CP437 (más común)</option>
-        <option value="iso8859-1">ISO-8859-1 / Latin-1</option>
-        <option value="raw">Sin conversión (enviar UTF-8 tal cual)</option>
-      </select>
-    </section>
-
-    <!-- ------------------------------------------------------------
          PESTAÑAS
          ------------------------------------------------------------ -->
     <div class="tabs">
       <button class="tab-btn active" data-tab="tabEditor">Editor Visual ESC/POS</button>
       <button class="tab-btn" data-tab="tabProbador">Probador</button>
+      <button class="tab-btn" data-tab="tabConfiguracion">Configuración</button>
     </div>
 
     <!-- ============================================================
@@ -505,6 +451,59 @@ Gracias por su compra ñÑ áéíóú</textarea>
         </div>
 
         <button id="btnImprimir" class="btn-primary btn-block" disabled>Imprimir en impresora</button>
+      </section>
+
+    </div>
+
+    <!-- ============================================================
+         PESTAÑA 3 — CONFIGURACIÓN
+         Agrupa los paneles compartidos "Agente local" y "Formato de
+         papel" para liberar espacio fijo en la barra lateral.
+         ============================================================ -->
+    <div id="tabConfiguracion" class="tab-panel">
+
+      <section class="panel">
+        <h2>Agente local</h2>
+        <p class="hint">El agente debe estar corriendo en la misma PC que el navegador.</p>
+
+        <label for="agentUrl">URL del agente</label>
+        <input type="text" id="agentUrl" value="http://127.0.0.1:9100">
+
+        <label for="printerName">Nombre de la impresora</label>
+        <input type="text" id="printerName" placeholder="Vacío = usar la predeterminada del sistema">
+        <div class="field-note">
+          Windows: nombre exacto tal como aparece en "Impresoras y escáneres".
+          Linux: nombre de la cola CUPS (revisa con "lpstat -p").
+        </div>
+
+        <button id="btnVerificar" class="btn-primary btn-block">Verificar conexión</button>
+
+        <div class="status off" id="status">
+          <span class="dot"></span>
+          <span id="statusText">Sin verificar</span>
+        </div>
+        <div class="field-note">
+          La primera vez, el navegador puede pedir permiso para "acceder
+          a dispositivos en tu red local" — acéptalo, es normal.
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Formato de papel</h2>
+        <p class="hint">Aplica a las dos pestañas: define ancho de línea y codificación de acentos.</p>
+
+        <label for="anchoPapel">Ancho de papel</label>
+        <select id="anchoPapel">
+          <option value="32">58 mm (32 caracteres)</option>
+          <option value="48" selected>80 mm (48 caracteres)</option>
+        </select>
+
+        <label for="codificacion">Codificación (code page ESC/POS)</label>
+        <select id="codificacion">
+          <option value="cp437" selected>CP437 (más común)</option>
+          <option value="iso8859-1">ISO-8859-1 / Latin-1</option>
+          <option value="raw">Sin conversión (enviar UTF-8 tal cual)</option>
+        </select>
       </section>
 
     </div>
