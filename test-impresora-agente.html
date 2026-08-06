@@ -187,6 +187,7 @@
     padding:8px 10px;
     font-size:12px;
   }
+  .bloque-item.editando{ outline:2px solid var(--teal); }
   .bloque-resumen{ flex:1; margin-right:8px; word-break:break-word; }
   .bloque-controles button{
     padding:3px 7px;
@@ -416,6 +417,7 @@
         </div>
 
         <button id="btnAgregarBloque" class="btn-secondary btn-block">+ Agregar bloque</button>
+        <button id="btnCancelarEdicion" class="btn-danger btn-block" style="display:none">Cancelar edición</button>
       </section>
 
       <section class="panel">
@@ -895,7 +897,7 @@ function renderizarListaBloques(){
   }
   bloques.forEach((bloque, idx) => {
     const fila = document.createElement('div');
-    fila.className = 'bloque-item';
+    fila.className = 'bloque-item' + (editandoIdx === idx ? ' editando' : '');
 
     const resumen = document.createElement('span');
     resumen.className = 'bloque-resumen';
@@ -904,10 +906,14 @@ function renderizarListaBloques(){
 
     const controles = document.createElement('span');
     controles.className = 'bloque-controles';
-    controles.innerHTML =
+    let botones =
       `<button type="button" data-accion="subir" data-idx="${idx}" title="Subir">↑</button>` +
-      `<button type="button" data-accion="bajar" data-idx="${idx}" title="Bajar">↓</button>` +
-      `<button type="button" data-accion="eliminar" data-idx="${idx}" title="Eliminar">✕</button>`;
+      `<button type="button" data-accion="bajar" data-idx="${idx}" title="Bajar">↓</button>`;
+    if(bloque.tipo === 'texto' || bloque.tipo === 'separador'){
+      botones += `<button type="button" data-accion="editar" data-idx="${idx}" title="Editar">✏</button>`;
+    }
+    botones += `<button type="button" data-accion="eliminar" data-idx="${idx}" title="Eliminar">✕</button>`;
+    controles.innerHTML = botones;
     fila.appendChild(controles);
 
     cont.appendChild(fila);
@@ -1141,6 +1147,7 @@ el('nuevoTipoBloque').addEventListener('change', () => {
    nuevo.
    ---------------------------------------------------------------- */
 let segmentosBorrador = [{ texto:'', negrita:false, subrayado:false }];
+let editandoIdx = null; // índice del bloque en edición (modo editar), o null si no se edita
 
 function segmentoVacio(){
   return { texto:'', negrita:false, subrayado:false };
@@ -1164,6 +1171,44 @@ function renderizarSegmentosBorrador(){
   });
 }
 renderizarSegmentosBorrador();
+
+function resetearFormulario(){
+  el('nuevoTipoBloque').value = 'texto';
+  el('camposTexto').style.display = 'block';
+  el('camposSeparador').style.display = 'none';
+  segmentosBorrador = [segmentoVacio()];
+  el('campoAlineacion').value = 'left';
+  el('campoTamano').value = 'normal';
+  el('campoCaracter').value = '-';
+  renderizarSegmentosBorrador();
+}
+
+function finalizarModoEdicion(restablecer){
+  editandoIdx = null;
+  el('btnAgregarBloque').textContent = '+ Agregar bloque';
+  el('btnCancelarEdicion').style.display = 'none';
+  if(restablecer) resetearFormulario();
+}
+
+function cargarBloqueEnFormulario(idx){
+  const b = bloques[idx];
+  if(!b) return;
+  editandoIdx = idx;
+  el('nuevoTipoBloque').value = b.tipo;
+  el('camposTexto').style.display = b.tipo === 'texto' ? 'block' : 'none';
+  el('camposSeparador').style.display = b.tipo === 'separador' ? 'block' : 'none';
+  if(b.tipo === 'texto'){
+    segmentosBorrador = (b.segmentos && b.segmentos.length ? b.segmentos : [segmentoVacio()])
+      .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado }));
+    el('campoAlineacion').value = b.alineacion || 'left';
+    el('campoTamano').value = b.tamano || 'normal';
+    renderizarSegmentosBorrador();
+  } else if(b.tipo === 'separador'){
+    el('campoCaracter').value = b.caracter || '-';
+  }
+  el('btnAgregarBloque').textContent = 'Guardar cambios';
+  el('btnCancelarEdicion').style.display = 'block';
+}
 
 el('listaSegmentos').addEventListener('input', (e) => {
   if(e.target.classList.contains('segmento-texto')){
@@ -1210,7 +1255,18 @@ el('btnAgregarBloque').addEventListener('click', () => {
   } else {
     bloque = { tipo };
   }
-  bloques.push(bloque);
+  if(editandoIdx !== null){
+    bloques[editandoIdx] = bloque;      // reemplaza el bloque en su posición
+    finalizarModoEdicion(true);         // sale del modo edición y limpia el formulario
+  } else {
+    bloques.push(bloque);
+  }
+  renderizarListaBloques();
+  actualizarPreviewVisual();
+});
+
+el('btnCancelarEdicion').addEventListener('click', () => {
+  finalizarModoEdicion(true);
   renderizarListaBloques();
   actualizarPreviewVisual();
 });
@@ -1220,6 +1276,16 @@ el('listaBloques').addEventListener('click', (e) => {
   if(!btn) return;
   const idx = parseInt(btn.dataset.idx, 10);
   const accion = btn.dataset.accion;
+
+  if(accion === 'editar'){
+    cargarBloqueEnFormulario(idx);
+    renderizarListaBloques();
+    actualizarPreviewVisual();
+    return;
+  }
+  // subir/bajar/eliminar invalidan el índice de edición: cancelar el modo
+  finalizarModoEdicion(false);
+
   if(accion === 'subir' && idx > 0){
     [bloques[idx-1], bloques[idx]] = [bloques[idx], bloques[idx-1]];
   } else if(accion === 'bajar' && idx < bloques.length - 1){
