@@ -266,6 +266,14 @@
     border-top:1px dashed #b5b09a;
     padding-top:6px;
   }
+  .receipt .barcode{ display:flex; flex-direction:column; margin:6px 0; }
+  .receipt .barcode-bars{ display:flex; }
+  .receipt .barcode-bars i{ display:block; min-width:1px; }
+  .receipt .barcode-datos{ text-align:center; letter-spacing:3px; font-size:11px; margin-top:2px; }
+  .receipt .qr-holder{ display:flex; margin:6px 0; }
+  .receipt .qr-box{ display:grid; grid-template-columns:repeat(21,1fr); margin:0 0 2px; }
+  .receipt .qr-box i{ aspect-ratio:1; background:#fff; }
+  .receipt .qr-box i.on{ background:#1c1c1a; }
 
   .log-panel pre{
     margin:0;
@@ -328,6 +336,8 @@
           <option value="separador">Línea separadora</option>
           <option value="salto">Salto de línea</option>
           <option value="corte">Corte de papel</option>
+          <option value="barcode">Código de barras</option>
+          <option value="qr">Código QR</option>
         </select>
 
         <div id="camposTexto">
@@ -377,6 +387,91 @@
           </select>
         </div>
 
+        <div id="camposCorte" style="display:none">
+          <label for="campoCorte">Tipo de corte</label>
+          <select id="campoCorte">
+            <option value="total" selected>Corte total</option>
+            <option value="parcial">Corte parcial</option>
+          </select>
+        </div>
+
+        <div id="camposCodigo" style="display:none">
+          <label for="campoTipoBarras">Simbología</label>
+          <select id="campoTipoBarras">
+            <option value="code39" selected>CODE39</option>
+            <option value="code128">CODE128</option>
+            <option value="ean13">EAN13</option>
+            <option value="ean8">EAN8</option>
+            <option value="upca">UPC-A</option>
+          </select>
+          <label for="campoDatosBarras">Datos (ASCII)</label>
+          <input type="text" id="campoDatosBarras" placeholder="1234567890128">
+          <div class="row">
+            <div>
+              <label for="campoAlineacionBarras">Alineación</label>
+              <select id="campoAlineacionBarras">
+                <option value="left">Izquierda</option>
+                <option value="center" selected>Centro</option>
+                <option value="right">Derecha</option>
+              </select>
+            </div>
+            <div>
+              <label for="campoAlturaBarras">Altura (puntos)</label>
+              <input type="text" id="campoAlturaBarras" inputmode="numeric" maxlength="3" value="162" placeholder="1–255">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="campoAnchoBarras">Ancho de módulo</label>
+              <select id="campoAnchoBarras">
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+              </select>
+            </div>
+            <div>
+              <label for="campoHriBarras">Texto bajo el código (HRI)</label>
+              <select id="campoHriBarras">
+                <option value="0">Ninguno</option>
+                <option value="1">Arriba</option>
+                <option value="2" selected>Abajo</option>
+                <option value="3">Arriba y abajo</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="camposQr" style="display:none">
+          <label for="campoDatosQr">Contenido QR</label>
+          <input type="text" id="campoDatosQr" placeholder="https://ejemplo.com?pago=123">
+          <label for="campoAlineacionQr">Alineación</label>
+          <select id="campoAlineacionQr">
+            <option value="left">Izquierda</option>
+            <option value="center" selected>Centro</option>
+            <option value="right">Derecha</option>
+          </select>
+          <label>
+            <input type="checkbox" id="campoMostrarQr" checked> Mostrar contenido debajo del código
+          </label>
+          <div class="row">
+            <div>
+              <label for="campoTamanoQr">Tamaño de módulo</label>
+              <select id="campoTamanoQr"></select>
+            </div>
+            <div>
+              <label for="campoCorreccionQr">Corrección de error</label>
+              <select id="campoCorreccionQr">
+                <option value="L">Bajo (L)</option>
+                <option value="M" selected>Medio (M)</option>
+                <option value="Q">Alto (Q)</option>
+                <option value="H">Muy alto (H)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <button id="btnAgregarBloque" class="btn-secondary btn-block">+ Agregar bloque</button>
         <button id="btnCancelarEdicion" class="btn-danger btn-block" style="display:none">Cancelar edición</button>
       </section>
@@ -384,6 +479,7 @@
       <section class="panel">
         <h2>Bloques del ticket</h2>
         <div id="listaBloques"></div>
+        <button id="btnActualizarPreviewBloques" class="btn-secondary btn-block">Actualizar vista previa</button>
         <button id="btnLimpiarBloques" class="btn-danger btn-block">Vaciar todo</button>
       </section>
 
@@ -587,6 +683,57 @@ function cplSegunFuente(fuente, anchoPapel){
   return fuente === 'B' ? (base === 48 ? 64 : 42) : base;
 }
 
+// Códigos de barras y QR (solo editor visual; story e03s02/e03s03).
+// GS k m n d1..dn NUL — m según simbología. El dato va en ASCII.
+const MAPA_BARRAS = { code39:4, code128:69, ean13:2, ean8:3, upca:0 };
+const ETIQUETA_BARRAS = { code39:'CODE39', code128:'CODE128', ean13:'EAN13', ean8:'EAN8', upca:'UPC-A' };
+const GS_H_ALTURA = (n) => [GS, 0x68, n];  // GS h n — altura del código de barras (puntos)
+const GS_W_MODULO = (n) => [GS, 0x77, n];  // GS w n — ancho de módulo (2..6)
+const GS_H_HRI    = (n) => [GS, 0x48, n];  // GS H n — posición del texto HRI (0..3)
+
+function textoAsciiBytes(texto){
+  return Array.from(texto, ch => {
+    const c = ch.charCodeAt(0);
+    return c < 128 ? c : 0x3F; // los códigos de barras solo soportan ASCII → '?'
+  });
+}
+
+// Secuencia QR Epson-style GS ( k (cn=0x31): módulo(43), corrección(45), guardar(50), imprimir(51).
+function bytesQR(datos, tamano, correccion){
+  const ecBytes = { L:0x30, M:0x31, Q:0x32, H:0x33 };
+  const ec = ecBytes[correccion] ?? 0x31;
+  const n = parseInt(tamano, 10) || 4;
+  const data = new TextEncoder().encode(datos || ''); // UTF-8
+  const len = data.length;
+  return [
+    0x1D,0x28,0x6B, 0x03,0x00, 0x31,0x43, n,            // módulo
+    0x1D,0x28,0x6B, 0x03,0x00, 0x31,0x45, ec,            // corrección
+    0x1D,0x28,0x6B, (len+3)&0xFF, ((len+3)>>8)&0xFF, 0x31,0x50,0x30, ...data,  // guardar datos
+    0x1D,0x28,0x6B, 0x03,0x00, 0x31,0x51,0x30            // imprimir
+  ];
+}
+
+// Patrón determinista (placeholder no escaneable) para la vista previa del QR.
+function qrHash(str){
+  let h = 7;
+  for(const ch of (str || '')) h = (h*31 + ch.charCodeAt(0)) & 0x7fffffff;
+  return h;
+}
+function qrCellOn(data, r, c){
+  const N = 21;
+  function finder(rr, cc){
+    const dr = r - rr, dc = c - cc;
+    const ring = dr===0||dr===6||dc===0||dc===6;
+    const core = dr>=2&&dr<=4&&dc>=2&&dc<=4;
+    return ring || core;
+  }
+  if(finder(0,0)) return true;
+  if(finder(0,N-7)) return true;
+  if(finder(N-7,0)) return true;
+  const h = qrHash(data);
+  return ((h >> ((r*N + c) % 31)) & 1) === 1;
+}
+
 /* ================================================================
    ESTADO Y REFERENCIAS DEL DOM
    ================================================================ */
@@ -702,7 +849,8 @@ function renderizarTicket(bytes){
       if(cmd === 0x56){
         const marca = document.createElement('div');
         marca.className = 'marca-corte';
-        marca.textContent = '✂ · · · · · · · · · · · · · · · · · · ·';
+        // 0x01 = corte parcial (más suave); por defecto total.
+        marca.textContent = bytes[i+2] === 1 ? '✂ - - - - - - - - - - - - - - - - - - - -' : '✂ · · · · · · · · · · · · · · · · · · ·';
         contenedor.appendChild(marca);
         nuevaLinea();
         i += 3; continue;
@@ -907,7 +1055,17 @@ function resumenBloque(b){
   }
   if(b.tipo === 'separador') return `Línea separadora ("${b.caracter}")${b.fuente === 'B' ? ' (Fuente B)' : ''}`;
   if(b.tipo === 'salto') return 'Salto de línea';
-  if(b.tipo === 'corte') return '✂ Corte de papel';
+  if(b.tipo === 'corte') return (b.corte === 'parcial') ? '✂ Corte parcial' : '✂ Corte total';
+  if(b.tipo === 'barcode'){
+    const al = b.alineacion === 'center' ? 'centro' : b.alineacion === 'right' ? 'derecha' : 'izq';
+    const hriTxt = {0:'sin HRI',1:'HRI arriba',2:'HRI abajo',3:'HRI ambos'}[(b.hri===undefined||b.hri===null)?2:b.hri];
+    return `Código de barras (${ETIQUETA_BARRAS[b.simbolo] || b.simbolo}): "${b.datos}" (${al}, h${b.altura||162}, w${b.anchoModulo||3}, ${hriTxt})`;
+  }
+  if(b.tipo === 'qr'){
+    const al = b.alineacion === 'center' ? 'centro' : b.alineacion === 'right' ? 'derecha' : 'izq';
+    const stx = b.mostrarDatos === false ? ', sin texto' : '';
+    return `Código QR (${b.correccion || 'M'}/mód.${b.tamano || 4}, ${al}${stx}): "${b.datos}"`;
+  }
   return b.tipo;
 }
 
@@ -932,7 +1090,7 @@ function renderizarListaBloques(){
     let botones =
       `<button type="button" data-accion="subir" data-idx="${idx}" title="Subir">↑</button>` +
       `<button type="button" data-accion="bajar" data-idx="${idx}" title="Bajar">↓</button>`;
-    if(bloque.tipo === 'texto' || bloque.tipo === 'separador'){
+    if(['texto','separador','corte','barcode','qr'].includes(bloque.tipo)){
       botones += `<button type="button" data-accion="editar" data-idx="${idx}" title="Editar">✏</button>`;
     }
     botones += `<button type="button" data-accion="eliminar" data-idx="${idx}" title="Eliminar">✕</button>`;
@@ -1003,7 +1161,21 @@ function bloquesABytes(listaBloques){
     } else if(b.tipo === 'salto'){
       bytes.push(0x0A);
     } else if(b.tipo === 'corte'){
-      bytes.push(...COMANDO_CORTE_TOTAL);
+      bytes.push(...(b.corte === 'parcial' ? COMANDO_CORTE_PARCIAL : COMANDO_CORTE_TOTAL));
+    } else if(b.tipo === 'barcode'){
+      asegurarAlineacion(b.alineacion || 'center');
+      const altura = parseInt(b.altura, 10) || 162;
+      const ancho = parseInt(b.anchoModulo, 10) || 3;
+      const hri = (b.hri === undefined || b.hri === null) ? 2 : b.hri;
+      bytes.push(...GS_H_ALTURA(altura));
+      bytes.push(...GS_W_MODULO(ancho));
+      bytes.push(...GS_H_HRI(hri));
+      const m = MAPA_BARRAS[b.simbolo] ?? 4;
+      const dat = textoAsciiBytes(b.datos || '');
+      bytes.push(GS, 0x6B, m, dat.length, ...dat, 0x00); // GS k m n d..d NUL
+    } else if(b.tipo === 'qr'){
+      asegurarAlineacion(b.alineacion || 'center');
+      bytes.push(...bytesQR(b.datos || '', b.tamano, b.correccion));
     }
   }
   return bytes;
@@ -1046,8 +1218,57 @@ function renderizarBloquesDirecto(listaBloques){
     } else if(b.tipo === 'corte'){
       const marca = document.createElement('div');
       marca.className = 'marca-corte';
-      marca.textContent = '✂ · · · · · · · · · · · · · · · · · · ·';
+      marca.textContent = b.corte === 'parcial' ? '✂ - - - - - - - - - - - - - - - - - - - -' : '✂ · · · · · · · · · · · · · · · · · · ·';
       contenedor.appendChild(marca);
+    } else if(b.tipo === 'barcode'){
+      const alineacion = b.alineacion || 'center';
+      const altura = parseInt(b.altura, 10) || 162;
+      const ancho = parseInt(b.anchoModulo, 10) || 3;
+      const hri = (b.hri === undefined || b.hri === null) ? 2 : b.hri;
+      const caja = document.createElement('div');
+      caja.className = 'barcode';
+      caja.style.alignItems = alineacion === 'center' ? 'center' : alineacion === 'right' ? 'flex-end' : 'flex-start';
+      const dat = textoAsciiBytes(b.datos || '');
+      function etiqueta(){ const e = document.createElement('div'); e.className = 'barcode-datos'; e.textContent = b.datos || ''; return e; }
+      if(hri === 1 || hri === 3) caja.appendChild(etiqueta()); // arriba
+      const barras = document.createElement('div');
+      barras.className = 'barcode-bars';
+      barras.style.width = Math.max(30, dat.length * 3 * ancho) + 'px';
+      barras.style.height = Math.max(12, Math.round(altura / 4)) + 'px';
+      dat.forEach((c, k) => {
+        const barra = document.createElement('i');
+        const g = (1 + (c % 3)) * ancho;
+        barra.style.flex = `${g} ${g} 0`;
+        barra.style.background = (k % 2 === 0) ? '#1c1c1a' : 'transparent';
+        barras.appendChild(barra);
+      });
+      caja.appendChild(barras);
+      if(hri === 2 || hri === 3) caja.appendChild(etiqueta()); // abajo
+      contenedor.appendChild(caja);
+    } else if(b.tipo === 'qr'){
+      const alineacion = b.alineacion || 'center';
+      const holder = document.createElement('div');
+      holder.className = 'qr-holder';
+      holder.style.justifyContent = alineacion === 'center' ? 'center' : alineacion === 'right' ? 'flex-end' : 'flex-start';
+      const qr = document.createElement('div');
+      qr.className = 'qr-box';
+      const tam = parseInt(b.tamano, 10) || 4;
+      qr.style.width = (tam * 21) + 'px';
+      for(let r = 0; r < 21; r++){
+        for(let c = 0; c < 21; c++){
+          const celda = document.createElement('i');
+          if(qrCellOn(b.datos || '', r, c)) celda.className = 'on';
+          qr.appendChild(celda);
+        }
+      }
+      holder.appendChild(qr);
+      contenedor.appendChild(holder);
+      if(b.mostrarDatos !== false){
+        const etiq = document.createElement('div');
+        etiq.className = 'barcode-datos';
+        etiq.textContent = b.datos || '';
+        contenedor.appendChild(etiq);
+      }
     }
   }
   return contenedor;
@@ -1138,7 +1359,38 @@ function bloquesAPhpCodigo(listaBloques){
     } else if(b.tipo === 'salto'){
       lineas.push('$ticket .= "\\n";');
     } else if(b.tipo === 'corte'){
-      lineas.push('$ticket .= $GS . "V" . "\\x00";  // corte de papel');
+      lineas.push(`$ticket .= $GS . "V" . "${b.corte === 'parcial' ? '\\x01' : '\\x00'}";  // corte ${b.corte === 'parcial' ? 'parcial' : 'total'}`);
+    } else if(b.tipo === 'barcode'){
+      const alBean = b.alineacion || 'center';
+      if(alBean !== alineacionActual){
+        const nAlign = alBean === 'center' ? '\\x01' : alBean === 'right' ? '\\x02' : '\\x00';
+        lineas.push(`$ticket .= $ESC . "a" . "${nAlign}";  // alinear ${alBean}`);
+        alineacionActual = alBean;
+      }
+      const altura = parseInt(b.altura, 10) || 162;
+      const ancho = parseInt(b.anchoModulo, 10) || 3;
+      const hri = (b.hri === undefined || b.hri === null) ? 2 : b.hri;
+      lineas.push(`$ticket .= $GS . "h" . chr(${altura});  // altura barras`);
+      lineas.push(`$ticket .= $GS . "w" . chr(${ancho});  // ancho módulo`);
+      lineas.push(`$ticket .= $GS . "H" . chr(${hri});  // texto HRI`);
+      const m = MAPA_BARRAS[b.simbolo] ?? 4;
+      const n = (b.datos || '').length;
+      lineas.push(`$ticket .= $GS . "k" . chr(${m}) . chr(${n}) . "${phpEscapeString(b.datos)}" . "\\x00";  // código de barras ${ETIQUETA_BARRAS[b.simbolo] || b.simbolo}`);
+    } else if(b.tipo === 'qr'){
+      const alBean = b.alineacion || 'center';
+      if(alBean !== alineacionActual){
+        const nAlign = alBean === 'center' ? '\\x01' : alBean === 'right' ? '\\x02' : '\\x00';
+        lineas.push(`$ticket .= $ESC . "a" . "${nAlign}";  // alinear ${alBean}`);
+        alineacionActual = alBean;
+      }
+      const ecBytes = { L:0x30, M:0x31, Q:0x32, H:0x33 };
+      const ec = ecBytes[b.correccion] ?? 0x31;
+      const tam = parseInt(b.tamano, 10) || 4;
+      const dato = phpEscapeString(b.datos || '');
+      lineas.push(`$ticket .= $GS . "(" . "k" . chr(3) . chr(0) . chr(0x31) . chr(0x43) . chr(${tam});  // QR módulo`);
+      lineas.push(`$ticket .= $GS . "(" . "k" . chr(3) . chr(0) . chr(0x31) . chr(0x45) . chr(${ec});  // QR corrección`);
+      lineas.push(`$ticket .= $GS . "(" . "k" . chr(strlen("${dato}") + 3) . chr(0) . chr(0x31) . chr(0x50) . chr(0x30) . "${dato}";  // QR datos`);
+      lineas.push(`$ticket .= $GS . "(" . "k" . chr(3) . chr(0) . chr(0x31) . chr(0x51) . chr(0x30);  // QR imprimir`);
     }
   }
 
@@ -1174,10 +1426,15 @@ el('anchoPapel').addEventListener('change', actualizarAnchoPreview);
 /* ================================================================
    EVENTOS — editor visual
    ================================================================ */
-el('nuevoTipoBloque').addEventListener('change', () => {
-  const tipo = el('nuevoTipoBloque').value;
+function mostrarCamposDe(tipo){
   el('camposTexto').style.display = tipo === 'texto' ? 'block' : 'none';
   el('camposSeparador').style.display = tipo === 'separador' ? 'block' : 'none';
+  el('camposCorte').style.display = tipo === 'corte' ? 'block' : 'none';
+  el('camposCodigo').style.display = tipo === 'barcode' ? 'block' : 'none';
+  el('camposQr').style.display = tipo === 'qr' ? 'block' : 'none';
+}
+el('nuevoTipoBloque').addEventListener('change', () => {
+  mostrarCamposDe(el('nuevoTipoBloque').value);
 });
 
 /* ----------------------------------------------------------------
@@ -1214,14 +1471,25 @@ renderizarSegmentosBorrador();
 
 function resetearFormulario(){
   el('nuevoTipoBloque').value = 'texto';
-  el('camposTexto').style.display = 'block';
-  el('camposSeparador').style.display = 'none';
+  mostrarCamposDe('texto');
   segmentosBorrador = [segmentoVacio()];
   el('campoAlineacion').value = 'left';
   el('campoTamano').value = 'normal';
   el('campoFuente').value = 'A';
   el('campoCaracter').value = '-';
   el('campoFuenteSeparador').value = 'A';
+  el('campoCorte').value = 'total';
+  el('campoTipoBarras').value = 'code39';
+  el('campoDatosBarras').value = '';
+  el('campoDatosQr').value = '';
+  el('campoTamanoQr').value = '4';
+  el('campoCorreccionQr').value = 'M';
+  el('campoAlineacionBarras').value = 'center';
+  el('campoAlturaBarras').value = '162';
+  el('campoAnchoBarras').value = '3';
+  el('campoHriBarras').value = '2';
+  el('campoAlineacionQr').value = 'center';
+  el('campoMostrarQr').checked = true;
   renderizarSegmentosBorrador();
 }
 
@@ -1237,8 +1505,7 @@ function cargarBloqueEnFormulario(idx){
   if(!b) return;
   editandoIdx = idx;
   el('nuevoTipoBloque').value = b.tipo;
-  el('camposTexto').style.display = b.tipo === 'texto' ? 'block' : 'none';
-  el('camposSeparador').style.display = b.tipo === 'separador' ? 'block' : 'none';
+  mostrarCamposDe(b.tipo);
   if(b.tipo === 'texto'){
     segmentosBorrador = (b.segmentos && b.segmentos.length ? b.segmentos : [segmentoVacio()])
       .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado }));
@@ -1249,6 +1516,21 @@ function cargarBloqueEnFormulario(idx){
   } else if(b.tipo === 'separador'){
     el('campoCaracter').value = b.caracter || '-';
     el('campoFuenteSeparador').value = b.fuente || 'A';
+  } else if(b.tipo === 'corte'){
+    el('campoCorte').value = b.corte || 'total';
+  } else if(b.tipo === 'barcode'){
+    el('campoTipoBarras').value = b.simbolo || 'code39';
+    el('campoDatosBarras').value = b.datos || '';
+    el('campoAlineacionBarras').value = b.alineacion || 'center';
+    el('campoAlturaBarras').value = (b.altura || 162).toString();
+    el('campoAnchoBarras').value = (b.anchoModulo || 3).toString();
+    el('campoHriBarras').value = ((b.hri===undefined||b.hri===null)?2:b.hri).toString();
+  } else if(b.tipo === 'qr'){
+    el('campoDatosQr').value = b.datos || '';
+    el('campoTamanoQr').value = (b.tamano || '4').toString();
+    el('campoCorreccionQr').value = b.correccion || 'M';
+    el('campoAlineacionQr').value = b.alineacion || 'center';
+    el('campoMostrarQr').checked = b.mostrarDatos !== false;
   }
   el('btnAgregarBloque').textContent = 'Guardar cambios';
   el('btnCancelarEdicion').style.display = 'block';
@@ -1297,8 +1579,33 @@ el('btnAgregarBloque').addEventListener('click', () => {
     renderizarSegmentosBorrador();
   } else if(tipo === 'separador'){
     bloque = { tipo: 'separador', caracter: el('campoCaracter').value || '-', fuente: el('campoFuenteSeparador').value || 'A' };
+  } else if(tipo === 'corte'){
+    bloque = { tipo:'corte', corte: el('campoCorte').value || 'total' };
+  } else if(tipo === 'barcode'){
+    const datos = (el('campoDatosBarras').value || '').trim();
+    if(!datos){ log('Escribe los datos del código de barras antes de agregar el bloque.', 'error'); return; }
+    bloque = {
+      tipo:'barcode',
+      simbolo: el('campoTipoBarras').value,
+      datos,
+      alineacion: el('campoAlineacionBarras').value || 'center',
+      altura: Math.min(255, Math.max(1, parseInt(el('campoAlturaBarras').value, 10) || 162)),
+      anchoModulo: parseInt(el('campoAnchoBarras').value, 10) || 3,
+      hri: parseInt(el('campoHriBarras').value, 10)
+    };
+  } else if(tipo === 'qr'){
+    const datos = (el('campoDatosQr').value || '').trim();
+    if(!datos){ log('Escribe el contenido del código QR antes de agregar el bloque.', 'error'); return; }
+    bloque = {
+      tipo:'qr',
+      datos,
+      tamano: el('campoTamanoQr').value || '4',
+      correccion: el('campoCorreccionQr').value || 'M',
+      mostrarDatos: el('campoMostrarQr').checked,
+      alineacion: el('campoAlineacionQr').value || 'center'
+    };
   } else {
-    bloque = { tipo };
+    bloque = { tipo }; // salto
   }
   if(editandoIdx !== null){
     bloques[editandoIdx] = bloque;      // reemplaza el bloque en su posición
@@ -1342,6 +1649,19 @@ el('listaBloques').addEventListener('click', (e) => {
   actualizarPreviewVisual();
 });
 
+el('btnActualizarPreviewBloques').addEventListener('click', () => {
+  actualizarPreviewVisual();
+});
+
+el('campoAlturaBarras').addEventListener('input', (e) => {
+  let v = e.target.value.replace(/\D/g, '');
+  if(v !== ''){
+    const n = parseInt(v, 10);
+    v = n > 255 ? '255' : (n < 1 ? '1' : String(n));
+  }
+  e.target.value = v;
+});
+
 el('btnLimpiarBloques').addEventListener('click', () => {
   bloques = [];
   renderizarListaBloques();
@@ -1374,6 +1694,17 @@ el('btnCopiarPhp').addEventListener('click', async () => {
 /* ================================================================
    INICIALIZACIÓN
    ================================================================ */
+// Opciones de tamaño de módulo QR (1..16), default 4.
+(function(){
+  const sel = el('campoTamanoQr');
+  for(let s = 1; s <= 16; s++){
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    if(s === 4) opt.selected = true;
+    sel.appendChild(opt);
+  }
+})();
 renderizarListaBloques();
 actualizarPreviewVisual(); // la pestaña por defecto es el Editor Visual
 
