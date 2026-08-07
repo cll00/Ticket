@@ -24,8 +24,6 @@ No pretendo competir con soluciones comerciales.
 
 Mi objetivo es crear una herramienta abierta que permita facilitar el desarrollo de aplicaciones que necesiten generar algún tipo de ticket mediante una impresora térmica sin depender de SDK propietarios.
 
-Si además puede servirle a otros desarrolladores, mucho mejor.
-
 # Requisitos
 
 * Para el agente de impresión se necesita Python 3.8+
