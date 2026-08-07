@@ -270,6 +270,7 @@
   .receipt .barcode-bars{ display:flex; }
   .receipt .barcode-bars i{ display:block; min-width:1px; }
   .receipt .barcode-datos{ text-align:center; letter-spacing:3px; font-size:11px; margin-top:2px; }
+  .receipt .barcode-datos.fuente-b{ font-size:75%; } /* texto del QR bajo el código en Fuente B */
   .receipt .qr-holder{ display:flex; margin:6px 0; }
   .receipt .qr-box{ display:grid; grid-template-columns:repeat(21,1fr); margin:0 0 2px; }
   .receipt .qr-box i{ aspect-ratio:1; background:#fff; }
@@ -338,6 +339,7 @@
           <option value="corte">Corte de papel</option>
           <option value="barcode">Código de barras</option>
           <option value="qr">Código QR</option>
+          <option value="image">Imagen</option>
         </select>
 
         <div id="camposTexto">
@@ -470,6 +472,30 @@
               </select>
             </div>
           </div>
+        </div>
+
+        <div id="camposImagen" style="display:none">
+          <label for="campoImagenArchivo">Archivo de imagen</label>
+          <input type="file" id="campoImagenArchivo" accept="image/*">
+          <div id="campoImagenMini"></div>
+          <p class="hint">Vista previa en monocromo (con el dithering elegido)</p>
+          <div id="campoImagenMiniMono"></div>
+          <label for="campoAnchoImagen">Ancho (puntos) — impresión Rasterizada (GS v 0)</label>
+          <input type="text" id="campoAnchoImagen" inputmode="numeric" maxlength="3" placeholder="384">
+          <div class="field-note">Máx: 384 (58 mm) / 648 (80 mm)</div>
+          <label for="campoDitheringImagen">Dithering (monocromo)</label>
+          <select id="campoDitheringImagen">
+            <option value="ninguno">Ninguno (umbral)</option>
+            <option value="floyd">Floyd–Steinberg</option>
+            <option value="bayer" selected>Bayer (matriz 4×4)</option>
+          </select>
+          <label for="campoAlineacionImagen">Alineación</label>
+          <select id="campoAlineacionImagen">
+            <option value="left">Izquierda</option>
+            <option value="center" selected>Centro</option>
+            <option value="right">Derecha</option>
+          </select>
+          <p class="hint" id="campoImagenAlto">Alto: automático según el ancho elegido</p>
         </div>
 
         <button id="btnAgregarBloque" class="btn-secondary btn-block">+ Agregar bloque</button>
@@ -732,6 +758,122 @@ function qrCellOn(data, r, c){
   if(finder(N-7,0)) return true;
   const h = qrHash(data);
   return ((h >> ((r*N + c) % 31)) & 1) === 1;
+}
+
+/* ================================================================
+   IMAGEN — bloque del editor visual (story e04s01)
+   Conversión a raster monocromo 1bpp + reconstrucción de preview.
+   ================================================================ */
+// GS v 0 m xL xH yL yH d... — raster (m=48 normal). x = bytes/línea, y = alto.
+const GS_RASTER = (ancho, alto, data) => {
+  const x = Math.ceil(ancho / 8);
+  return [GS, 0x76, 0x30, 0x30, x & 0xFF, (x >> 8) & 0xFF, alto & 0xFF, (alto >> 8) & 0xFF, ...data];
+};
+// Máximo ancho de imagen (puntos) según ancho de papel activo.
+const MAX_ANCHO_IMAGEN = (anchoPapel) => (parseInt(anchoPapel, 10) === 32 ? 384 : 648);
+
+// Matriz Bayer 4×4 para dithering ordenado.
+const BAYER4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+
+// Aplica el método de dithering sobre luminancia (0..255) y devuelve 1bpp (0/1).
+function aplicarDithering(gris, ancho, alto, modo){
+  const out = new Uint8Array(ancho * alto);
+  const M = modo || 'ninguno';
+  if(M === 'floyd'){
+    const err = new Float32Array(ancho * alto);
+    for(let y = 0; y < alto; y++){
+      for(let x = 0; x < ancho; x++){
+        const i = y * ancho + x;
+        const v = gris[i] + err[i];
+        const on = v < 128 ? 1 : 0;
+        out[i] = on;
+        const qerror = v - (on ? 0 : 255); // negro→0, blanco→255
+        const rep = (nx, ny, f) => { if(nx >= 0 && nx < ancho && ny >= 0 && ny < alto) err[ny * ancho + nx] += qerror * f; };
+        rep(x + 1, y, 7 / 16); rep(x - 1, y + 1, 3 / 16); rep(x, y + 1, 5 / 16); rep(x + 1, y + 1, 1 / 16);
+      }
+    }
+  } else if(M === 'bayer'){
+    for(let y = 0; y < alto; y++){
+      for(let x = 0; x < ancho; x++){
+        const i = y * ancho + x;
+        const th = ((BAYER4[y % 4][x % 4] + 0.5) / 16) * 255;
+        out[i] = gris[i] < th ? 1 : 0;
+      }
+    }
+  } else { // ninguno (umbral simple)
+    for(let i = 0; i < gris.length; i++) out[i] = gris[i] < 128 ? 1 : 0;
+  }
+  return out;
+}
+
+// Convierte una imagen (HTMLImageElement/Canvas) a raster monocromo 1bpp
+// empaquetado por scanline (MSB primero), aplicando el dithering elegido.
+// Devuelve {ancho, alto, dataBase64}.
+function imagenARaster1bpp(img, ancho, alto, dithering){
+  const canvas = document.createElement('canvas');
+  canvas.width = ancho; canvas.height = alto;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ancho, alto);
+  ctx.drawImage(img, 0, 0, ancho, alto);
+  const px = ctx.getImageData(0, 0, ancho, alto).data;
+  const gris = new Uint8Array(ancho * alto);
+  for(let i = 0; i < ancho * alto; i++){
+    gris[i] = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+  }
+  const binary = aplicarDithering(gris, ancho, alto, dithering);
+  const xBytes = Math.ceil(ancho / 8);
+  const bytes = [];
+  for(let y = 0; y < alto; y++){
+    for(let bx = 0; bx < xBytes; bx++){
+      let byte = 0;
+      const base = bx * 8;
+      for(let bit = 0; bit < 8; bit++){
+        const x = base + bit;
+        if(x >= ancho) break; // píxeles de relleno → 0 (blanco)
+        if(binary[y * ancho + x]) byte |= (0x80 >> bit);
+      }
+      bytes.push(byte);
+    }
+  }
+  return { ancho, alto, dataBase64: bytesABase64(bytes) };
+}
+
+// Reconstruye la imagen monocroma 1bpp guardada como data URL (para preview).
+function rasterAImagenDataURL(ancho, alto, dataBase64){
+  const bin = atob(dataBase64 || '');
+  const bytes = Array.from(bin, c => c.charCodeAt(0));
+  const canvas = document.createElement('canvas');
+  canvas.width = ancho; canvas.height = alto;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ancho, alto);
+  const img = ctx.createImageData(ancho, alto);
+  const xBytes = Math.ceil(ancho / 8);
+  for(let y = 0; y < alto; y++){
+    for(let x = 0; x < ancho; x++){
+      const b = bytes[y * xBytes + (x >> 3)] || 0;
+      const on = (b & (0x80 >> (x % 8))) ? 255 : 0;
+      const i = (y * ancho + x) * 4;
+      img.data[i] = on; img.data[i + 1] = on; img.data[i + 2] = on; img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL();
+}
+
+// Raster monocromo determinista de ejemplo (marco con diagonal) — ticket demo.
+function imagenDemoMonocromo(){
+  const ancho = 96, alto = 32, xBytes = Math.ceil(ancho / 8);
+  const bytes = new Array(xBytes * alto).fill(0);
+  function setPx(x, y){
+    if(x < 0 || x >= ancho || y < 0 || y >= alto) return;
+    bytes[y * xBytes + (x >> 3)] |= (0x80 >> (x % 8));
+  }
+  for(let x = 0; x < ancho; x++){ setPx(x, 0); setPx(x, alto - 1); }
+  for(let y = 0; y < alto; y++){
+    setPx(0, y); setPx(ancho - 1, y);
+    setPx(Math.round((ancho - 1) * (y / (alto - 1))), y); // diagonal
+  }
+  return { ancho, alto, dataBase64: bytesABase64(bytes) };
 }
 
 /* ================================================================
@@ -1013,26 +1155,48 @@ async function imprimirTicket(){
    ================================================================ */
 
 let bloques = [
-  { tipo:'texto', alineacion:'center', tamano:'ambos', segmentos:[
+  // Imagen (logo monocromo) — atr: alineación
+  Object.assign({ tipo:'image', dithering:'bayer', alineacion:'center' }, (() => {
+    const d = imagenDemoMonocromo();
+    return { ancho: d.ancho, alto: d.alto, data: d.dataBase64 };
+  })()),
+  // Texto — atr: alineación=centro, tamaño=doble ancho+alto, fuente=A, segmento negrita
+  { tipo:'texto', alineacion:'center', tamano:'ambos', fuente:'A', segmentos:[
     { texto:'MI TIENDA', negrita:true, subrayado:false }
   ]},
-  { tipo:'separador', caracter:'-' },
-  { tipo:'texto', alineacion:'left', tamano:'normal', segmentos:[
-    { texto:'Producto A          x1     $1000', negrita:false, subrayado:false }
+  // Separador — atr: carácter y fuente=B (más estrecho)
+  { tipo:'separador', caracter:'-', fuente:'B' },
+  // Texto — atr: fuente=B
+  { tipo:'texto', alineacion:'left', tamano:'normal', fuente:'B', segmentos:[
+    { texto:'Línea en Fuente B (64 car/80mm)', negrita:false, subrayado:false }
   ]},
-  { tipo:'texto', alineacion:'left', tamano:'normal', segmentos:[
+  // Texto — atr: segmento subrayado
+  { tipo:'texto', alineacion:'left', tamano:'normal', fuente:'A', segmentos:[
+    { texto:'Producto A          x1     $1000', negrita:false, subrayado:true }
+  ]},
+  { tipo:'texto', alineacion:'left', tamano:'normal', fuente:'A', segmentos:[
     { texto:'Producto B          x2     $2000', negrita:false, subrayado:false }
   ]},
-  { tipo:'separador', caracter:'-' },
-  { tipo:'texto', alineacion:'left', tamano:'normal', segmentos:[
+  { tipo:'separador', caracter:'=', fuente:'A' },
+  // Texto — atr: varios segmentos (negrita + normal) en un mismo bloque
+  { tipo:'texto', alineacion:'left', tamano:'normal', fuente:'A', segmentos:[
     { texto:'TOTAL: ', negrita:true, subrayado:false },
-    { texto:'                   $3000', negrita:false, subrayado:false }
+    { texto:'$3000', negrita:false, subrayado:true }
+  ]},
+  // Texto — atr: tamaño=doble alto, alineación=centro
+  { tipo:'texto', alineacion:'center', tamano:'alto', fuente:'A', segmentos:[
+    { texto:'GRACIAS', negrita:false, subrayado:false }
   ]},
   { tipo:'salto' },
-  { tipo:'texto', alineacion:'center', tamano:'normal', segmentos:[
-    { texto:'Gracias por su compra ñÑ áéíóú', negrita:false, subrayado:false }
-  ]},
-  { tipo:'corte' }
+  // Corte parcial — atr: corte
+  { tipo:'corte', corte:'parcial' },
+  // Código de barras — atr: símbolo CODE128, datos, alineación, altura, ancho módulo (fijo 2), HRI
+  { tipo:'barcode', simbolo:'code128', datos:'4012345678901', alineacion:'center', altura:162, anchoModulo:2, hri:2 },
+  { tipo:'salto' },
+  // Código QR — atr: datos, módulo, corrección, alineación, mostrar texto
+  { tipo:'qr', datos:'https://ejemplo.com?pago=123', tamano:'4', correccion:'M', alineacion:'center', mostrarDatos:true },
+  // Corte total — atr: corte (por defecto)
+  { tipo:'corte', corte:'total' }
 ];
 
 function resumenBloque(b){
@@ -1066,6 +1230,11 @@ function resumenBloque(b){
     const stx = b.mostrarDatos === false ? ', sin texto' : '';
     return `Código QR (${b.correccion || 'M'}/mód.${b.tamano || 4}, ${al}${stx}): "${b.datos}"`;
   }
+  if(b.tipo === 'image'){
+    const al = b.alineacion === 'center' ? 'centro' : b.alineacion === 'right' ? 'derecha' : 'izq';
+    const dit = { 'ninguno':'sin dither', 'floyd':'Floyd-Steinberg', 'bayer':'Bayer' }[b.dithering || 'bayer'];
+    return `Imágen (Raster, ${b.ancho || 0}×${b.alto || 0} px, ${al}, ${dit})`;
+  }
   return b.tipo;
 }
 
@@ -1090,7 +1259,7 @@ function renderizarListaBloques(){
     let botones =
       `<button type="button" data-accion="subir" data-idx="${idx}" title="Subir">↑</button>` +
       `<button type="button" data-accion="bajar" data-idx="${idx}" title="Bajar">↓</button>`;
-    if(['texto','separador','corte','barcode','qr'].includes(bloque.tipo)){
+    if(['texto','separador','corte','barcode','qr','image'].includes(bloque.tipo)){
       botones += `<button type="button" data-accion="editar" data-idx="${idx}" title="Editar">✏</button>`;
     }
     botones += `<button type="button" data-accion="eliminar" data-idx="${idx}" title="Eliminar">✕</button>`;
@@ -1188,9 +1357,15 @@ function bloquesABytes(listaBloques){
       asegurarAlineacion(b.alineacion || 'center');
       bytes.push(...bytesQR(b.datos || '', b.tamano, b.correccion));
       if(b.mostrarDatos !== false){
-        bytes.push(...textoABytes(b.datos || '', modo)); // texto del contenido bajo el QR
+        asegurarTamano('normal');
+        asegurarFuente('B'); // texto bajo el QR en Fuente B (misma alineación)
+        bytes.push(...textoABytes(b.datos || '', modo));
         bytes.push(0x0A);
       }
+    } else if(b.tipo === 'image'){
+      asegurarAlineacion(b.alineacion || 'center');
+      const dbytes = Array.from(atob(b.data || ''), c => c.charCodeAt(0));
+      bytes.push(...GS_RASTER(parseInt(b.ancho, 10) || 1, parseInt(b.alto, 10) || 1, dbytes));
     }
   }
   return bytes;
@@ -1280,10 +1455,20 @@ function renderizarBloquesDirecto(listaBloques){
       contenedor.appendChild(holder);
       if(b.mostrarDatos !== false){
         const etiq = document.createElement('div');
-        etiq.className = 'barcode-datos';
+        etiq.className = 'barcode-datos fuente-b'; // texto bajo el QR en Fuente B
         etiq.textContent = b.datos || '';
+        etiq.style.textAlign = alineacion;
         contenedor.appendChild(etiq);
       }
+    } else if(b.tipo === 'image'){
+      const lineaImg = nuevaLineaEn(b.alineacion || 'center');
+      const img = document.createElement('img');
+      img.src = rasterAImagenDataURL(parseInt(b.ancho, 10) || 1, parseInt(b.alto, 10) || 1, b.data);
+      img.alt = 'Imagen';
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.imageRendering = 'pixelated';
+      lineaImg.appendChild(img);
     }
   }
   return contenedor;
@@ -1411,9 +1596,28 @@ function bloquesAPhpCodigo(listaBloques){
       lineas.push(`$ticket .= $GS . "(" . "k" . chr(strlen("${dato}") + 3) . chr(0) . chr(0x31) . chr(0x50) . chr(0x30) . "${dato}";  // QR datos`);
       lineas.push(`$ticket .= $GS . "(" . "k" . chr(3) . chr(0) . chr(0x31) . chr(0x51) . chr(0x30);  // QR imprimir`);
       if(b.mostrarDatos !== false){
-        lineas.push(`$ticket .= "${dato}";  // QR contenido bajo el código`);
+        if(tamanoActual !== 'normal'){
+          lineas.push('$ticket .= $GS . "!" . "\\x00";  // tamaño normal');
+          tamanoActual = 'normal';
+        }
+        if(fuenteActual !== '\\x01'){
+          lineas.push('$ticket .= $ESC . "M" . "\\x01";  // Fuente B');
+          fuenteActual = '\\x01';
+        }
+        lineas.push(`$ticket .= "${dato}";  // QR contenido bajo el código (Fuente B)`);
         lineas.push('$ticket .= "\\n";');
       }
+    } else if(b.tipo === 'image'){
+      const alBean = b.alineacion || 'center';
+      if(alBean !== alineacionActual){
+        const nAlign = alBean === 'center' ? '\\x01' : alBean === 'right' ? '\\x02' : '\\x00';
+        lineas.push(`$ticket .= $ESC . "a" . "${nAlign}";  // alinear ${alBean}`);
+        alineacionActual = alBean;
+      }
+      const ancho = parseInt(b.ancho, 10) || 1;
+      const alto = parseInt(b.alto, 10) || 1;
+      const x = Math.ceil(ancho / 8);
+      lineas.push(`$ticket .= $GS . "v" . "0" . "\\x30" . chr(${x & 0xFF}) . chr(${(x >> 8) & 0xFF}) . chr(${alto & 0xFF}) . chr(${(alto >> 8) & 0xFF}) . base64_decode("${b.data}");  // imagen rasterizada`);
     }
   }
 
@@ -1455,10 +1659,82 @@ function mostrarCamposDe(tipo){
   el('camposCorte').style.display = tipo === 'corte' ? 'block' : 'none';
   el('camposCodigo').style.display = tipo === 'barcode' ? 'block' : 'none';
   el('camposQr').style.display = tipo === 'qr' ? 'block' : 'none';
+  el('camposImagen').style.display = tipo === 'image' ? 'block' : 'none';
 }
 el('nuevoTipoBloque').addEventListener('change', () => {
   mostrarCamposDe(el('nuevoTipoBloque').value);
 });
+
+// CODE39 y CODE128 solo se imprimen con ancho de módulo 2 → lo fija y deshabilita el selector.
+function ajustarAnchoModuloBarras(){
+  const sim = el('campoTipoBarras').value;
+  const solo2 = (sim === 'code39' || sim === 'code128');
+  el('campoAnchoBarras').disabled = solo2;
+  if(solo2) el('campoAnchoBarras').value = '2';
+}
+el('campoTipoBarras').addEventListener('change', ajustarAnchoModuloBarras);
+ajustarAnchoModuloBarras(); // estado inicial (code39 por defecto → ancho 2 bloqueado)
+
+function actualizarAltoImagen(){
+  if(!imagenBorrador) return;
+  const ancho = parseInt(el('campoAnchoImagen').value, 10) || 0;
+  if(ancho <= 0){
+    el('campoImagenAlto').textContent = 'Alto: automático según el ancho elegido';
+    return;
+  }
+  const alto = Math.max(1, Math.round(imagenBorrador.naturalH * ancho / imagenBorrador.naturalW));
+  el('campoImagenAlto').textContent = `Alto: ${alto} px (imagen ${imagenBorrador.naturalW}×${imagenBorrador.naturalH})`;
+}
+
+// Refresca la vista previa monocroma del borrador con el dithering/ancho actuales.
+function refrescarPreviewMonocromo(){
+  const dest = el('campoImagenMiniMono');
+  if(!imagenBorrador){ dest.innerHTML = ''; return; }
+  const maxW = MAX_ANCHO_IMAGEN(el('anchoPapel').value);
+  let ancho = parseInt(el('campoAnchoImagen').value, 10) || maxW;
+  ancho = Math.max(1, Math.min(maxW, ancho));
+  const alto = Math.max(1, Math.round(imagenBorrador.naturalH * ancho / imagenBorrador.naturalW));
+  const raster = imagenARaster1bpp(imagenBorrador.img, ancho, alto, el('campoDitheringImagen').value || 'bayer');
+  dest.innerHTML = '';
+  const im = document.createElement('img');
+  im.src = rasterAImagenDataURL(raster.ancho, raster.alto, raster.dataBase64);
+  im.style.maxWidth = '100%';
+  im.style.imageRendering = 'pixelated';
+  im.alt = 'Vista previa monocroma';
+  dest.appendChild(im);
+}
+
+el('campoImagenArchivo').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if(!file){ imagenBorrador = null; return; }
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      imagenBorrador = { img, naturalW: img.naturalWidth, naturalH: img.naturalHeight };
+      const mini = el('campoImagenMini');
+      mini.innerHTML = '';
+      const mv = document.createElement('img');
+      mv.src = fr.result;
+      mv.style.maxWidth = '100%';
+      mv.style.maxHeight = '90px';
+      mini.appendChild(mv);
+      const maxW = MAX_ANCHO_IMAGEN(el('anchoPapel').value);
+      el('campoAnchoImagen').value = String(Math.max(1, Math.round(maxW / 2)));
+      actualizarAltoImagen();
+      refrescarPreviewMonocromo();
+    };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+});
+
+el('campoAnchoImagen').addEventListener('input', () => {
+  actualizarAltoImagen();
+  refrescarPreviewMonocromo();
+});
+
+el('campoDitheringImagen').addEventListener('change', refrescarPreviewMonocromo);
 
 /* ----------------------------------------------------------------
    SEGMENTOS EN BORRADOR — el formulario "Agregar bloque" arma una
@@ -1468,6 +1744,7 @@ el('nuevoTipoBloque').addEventListener('change', () => {
    ---------------------------------------------------------------- */
 let segmentosBorrador = [{ texto:'', negrita:false, subrayado:false }];
 let editandoIdx = null; // índice del bloque en edición (modo editar), o null si no se edita
+let imagenBorrador = null; // { img, naturalW, naturalH } de la imagen seleccionada en el formulario
 
 function segmentoVacio(){
   return { texto:'', negrita:false, subrayado:false };
@@ -1509,10 +1786,18 @@ function resetearFormulario(){
   el('campoCorreccionQr').value = 'M';
   el('campoAlineacionBarras').value = 'center';
   el('campoAlturaBarras').value = '162';
-  el('campoAnchoBarras').value = '3';
+  el('campoAnchoBarras').value = '2';
+  ajustarAnchoModuloBarras();
   el('campoHriBarras').value = '2';
   el('campoAlineacionQr').value = 'center';
   el('campoMostrarQr').checked = true;
+  el('campoImagenMini').innerHTML = '';
+  el('campoImagenMiniMono').innerHTML = '';
+  el('campoAnchoImagen').value = '';
+  el('campoDitheringImagen').value = 'bayer';
+  el('campoImagenAlto').textContent = 'Alto: automático según el ancho elegido';
+  if(el('campoImagenArchivo')) el('campoImagenArchivo').value = '';
+  imagenBorrador = null;
   renderizarSegmentosBorrador();
 }
 
@@ -1547,6 +1832,7 @@ function cargarBloqueEnFormulario(idx){
     el('campoAlineacionBarras').value = b.alineacion || 'center';
     el('campoAlturaBarras').value = (b.altura || 162).toString();
     el('campoAnchoBarras').value = (b.anchoModulo || 3).toString();
+    ajustarAnchoModuloBarras();
     el('campoHriBarras').value = ((b.hri===undefined||b.hri===null)?2:b.hri).toString();
   } else if(b.tipo === 'qr'){
     el('campoDatosQr').value = b.datos || '';
@@ -1554,6 +1840,17 @@ function cargarBloqueEnFormulario(idx){
     el('campoCorreccionQr').value = b.correccion || 'M';
     el('campoAlineacionQr').value = b.alineacion || 'center';
     el('campoMostrarQr').checked = b.mostrarDatos !== false;
+  } else if(b.tipo === 'image'){
+    const ancho = parseInt(b.ancho, 10) || 1;
+    const alto = parseInt(b.alto, 10) || 1;
+    el('campoAnchoImagen').value = (b.ancho || '').toString();
+    el('campoDitheringImagen').value = b.dithering || 'bayer';
+    el('campoImagenMini').innerHTML = '';
+    el('campoImagenAlto').textContent = `Alto: ${alto} px (imagen ${ancho}×${alto} 1bpp)`;
+    const src = rasterAImagenDataURL(ancho, alto, b.data);
+    const img = new Image();
+    img.onload = () => { imagenBorrador = { img, naturalW: img.naturalWidth, naturalH: img.naturalHeight }; };
+    img.src = src;
   }
   el('btnAgregarBloque').textContent = 'Guardar cambios';
   el('btnCancelarEdicion').style.display = 'block';
@@ -1613,7 +1910,7 @@ el('btnAgregarBloque').addEventListener('click', () => {
       datos,
       alineacion: el('campoAlineacionBarras').value || 'center',
       altura: Math.min(255, Math.max(1, parseInt(el('campoAlturaBarras').value, 10) || 162)),
-      anchoModulo: parseInt(el('campoAnchoBarras').value, 10) || 3,
+      anchoModulo: (el('campoTipoBarras').value === 'code39' || el('campoTipoBarras').value === 'code128') ? 2 : (parseInt(el('campoAnchoBarras').value, 10) || 3),
       hri: parseInt(el('campoHriBarras').value, 10)
     };
   } else if(tipo === 'qr'){
@@ -1627,6 +1924,30 @@ el('btnAgregarBloque').addEventListener('click', () => {
       mostrarDatos: el('campoMostrarQr').checked,
       alineacion: el('campoAlineacionQr').value || 'center'
     };
+  } else if(tipo === 'image'){
+    if(!imagenBorrador){ log('Selecciona un archivo de imagen antes de agregar el bloque.', 'error'); return; }
+    let ancho = parseInt(el('campoAnchoImagen').value, 10) || 0;
+    const maxW = MAX_ANCHO_IMAGEN(el('anchoPapel').value);
+    if(ancho < 1) ancho = maxW;
+    if(ancho > maxW){
+      log(`El ancho ${ancho} supera el máximo de ${maxW} px para el papel actual; se ajusta a ${maxW}.`, 'error');
+      ancho = maxW;
+    }
+    const alto = Math.max(1, Math.round(imagenBorrador.naturalH * ancho / imagenBorrador.naturalW));
+    const dithering = el('campoDitheringImagen').value || 'bayer';
+    const raster = imagenARaster1bpp(imagenBorrador.img, ancho, alto, dithering);
+    bloque = {
+      tipo:'image',
+      dithering,
+      ancho: raster.ancho,
+      alto: raster.alto,
+      data: raster.dataBase64,
+      alineacion: el('campoAlineacionImagen').value || 'center'
+    };
+    imagenBorrador = null;
+    if(el('campoImagenArchivo')) el('campoImagenArchivo').value = '';
+    el('campoImagenMini').innerHTML = '';
+    el('campoAnchoImagen').value = '';
   } else {
     bloque = { tipo }; // salto
   }
