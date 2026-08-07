@@ -339,7 +339,7 @@
           <option value="corte">Corte de papel</option>
           <option value="barcode">Código de barras</option>
           <option value="qr">Código QR</option>
-          <option value="image">Imágen</option>
+          <option value="image">Imagen</option>
         </select>
 
         <div id="camposTexto">
@@ -1233,7 +1233,7 @@ function resumenBloque(b){
   if(b.tipo === 'image'){
     const al = b.alineacion === 'center' ? 'centro' : b.alineacion === 'right' ? 'derecha' : 'izq';
     const dit = { 'ninguno':'sin dither', 'floyd':'Floyd-Steinberg', 'bayer':'Bayer' }[b.dithering || 'bayer'];
-    return `Imágen (Raster, ${b.ancho || 0}×${b.alto || 0} px, ${al}, ${dit})`;
+    return `Imagen (Raster, ${b.ancho || 0}×${b.alto || 0} px, ${al}, ${dit})`;
   }
   return b.tipo;
 }
