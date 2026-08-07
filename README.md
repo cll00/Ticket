@@ -23,7 +23,7 @@ Actualmente el enfoque principal está puesto en **PHP**, ya que es el lenguaje 
 
 * soporte para más comandos ESC/POS
 * posibilidad de guardar los diseños creados
-* exportación de reportes a otros lenguajes
+* generacion de muestra de codigo asociado al ticket en otros lenguajes de programación
 
 # 💡 Filosofía del proyecto
 
@@ -35,9 +35,9 @@ Si además puede servirle a otros desarrolladores, mucho mejor.
 
 # Requisitos
 
-* Python 3.8+
-* Navegador moderno
-* Impresora térmica compatible con ESC/POS
+* Para el agente de impresión se necesita Python 3.8+
+* Navegador lo mas actualizado posible
+* Impresora térmica compatible con ESC/POS (para las pruebas estoy usando una EPSON TM-T20II)
 
 # 🤝 Contribuciones
 
