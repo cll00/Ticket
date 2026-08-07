@@ -2,28 +2,21 @@
 
 > Una herramienta para diseñar, probar e imprimir tickets utilizando el lenguaje de las impresoras ESC/POS desde el navegador utilizando un agente local de impresión.
 
----
-
 # 🚀 ¿Por qué nació este proyecto?
 
-Me vi en la necesidad de imprimir tickets en una impresora térmica desde una aplicación web desarrollada en PHP.
-
-Después de revisar las alternativas disponibles descubrí que la mayoría de las soluciones existentes eran comerciales, tenían licencias de pago o dependían de componentes cerrados.
-
-Actualmente el enfoque principal está puesto en **PHP**, ya que es el lenguaje que necesito para otro proyecto personal, aunque la arquitectura permite generar implementaciones para otros lenguajes en el futuro.
+Me vi en la necesidad de imprimir tickets en una impresora térmica desde una aplicación web desarrollada en PHP. Después de revisar las alternativas disponibles descubrí que la mayoría de las soluciones existentes eran comerciales, tenían licencias de pago o dependían de componentes cerrados.
 
 # 🎯 Objetivos
 
 * Creación de tickets utilizando el protocolo ESC/POS en forma sencilla y transparente para el usuario.
 * Evitar depender de soluciones comerciales que siempre incluyen algo que te hace pasar por caja.
-* Proporcionar un entorno de trabajo que también permita probar los ticket hechos con tu aplicación mediante la previsualización del mismo.
-* Generar código re utilizable.
+* Proporcionar un entorno de trabajo que también permita probar los ticket hechos con tu aplicación mediante la previsualización de ellos.
 
 ## 🛣️ Próximas ideas
 
-* soporte para más comandos ESC/POS
-* posibilidad de guardar los diseños creados
-* generacion de muestra de codigo asociado al ticket en otros lenguajes de programación
+* Soporte para más comandos ESC/POS.
+* Psibilidad de guardar los diseños creados.
+* Generación de muestra de codigo asociado al ticket en otros lenguajes de programación.
 
 # 💡 Filosofía del proyecto
 
@@ -36,7 +29,7 @@ Si además puede servirle a otros desarrolladores, mucho mejor.
 # Requisitos
 
 * Para el agente de impresión se necesita Python 3.8+
-* Navegador lo mas actualizado posible
+* Navegador web lo mas actualizado posible
 * Impresora térmica compatible con ESC/POS (para las pruebas estoy usando una EPSON TM-T20II)
 
 # 🤝 Contribuciones
