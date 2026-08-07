@@ -15,7 +15,7 @@ Me vi en la necesidad de imprimir tickets en una impresora térmica desde una ap
 ## 🛣️ Próximas ideas
 
 * Soporte para más comandos ESC/POS.
-* Psibilidad de guardar los diseños creados.
+* Posibilidad de guardar los diseños creados.
 * Generación de muestra de codigo asociado al ticket en otros lenguajes de programación.
 
 # 💡 Filosofía del proyecto
