@@ -198,7 +198,7 @@
 
   .segmento-item{
     display:flex;
-    align-items:center;
+    flex-direction:column;
     gap:6px;
     background:#1c1c1a;
     border:1px solid #34342f;
@@ -206,10 +206,33 @@
     padding:6px 8px;
     margin-bottom:6px;
   }
-  .segmento-item input[type=text]{
+  .segmento-linea{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .segmento-linea .segmento-texto{
     flex:1;
     padding:5px 8px;
     font-size:12px;
+    box-sizing:border-box;
+  }
+  .segmento-linea textarea.segmento-texto{
+    resize:vertical;   /* solo altura: solo se estira verticalmente (story: e05s02) */
+    min-height:38px;
+    max-height:240px;
+    line-height:1.4;
+    border:1px solid #34342f;
+    border-radius:4px;
+    background:#171715;
+    color:var(--text);
+    width:100%;
+  }
+  .segmento-checks{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
   }
   .segmento-item label{
     display:flex;
@@ -219,6 +242,7 @@
     font-size:11px;
     white-space:nowrap;
     color:#c8c4b0;
+    cursor:pointer;
   }
   .segmento-item button{
     padding:3px 7px;
@@ -1212,6 +1236,7 @@ function resumenBloque(b){
     if(b.fuente === 'B') partes.push('Fuente B');
     if(formatos.size) partes.push([...formatos].join('+'));
     if(b.segmentos.length > 1) partes.push(`${b.segmentos.length} segmentos`);
+    if(b.segmentos.some(s => s.multilinea)) partes.push('multilínea');
     const extra = partes.length ? ` (${partes.join(', ')})` : '';
     const previewTxt = textoCompleto.length > 30 ? textoCompleto.slice(0,30) + '…' : textoCompleto;
     return `Texto: "${previewTxt}"${extra}`;
@@ -1746,7 +1771,7 @@ let editandoIdx = null; // índice del bloque en edición (modo editar), o null 
 let imagenBorrador = null; // { img, naturalW, naturalH } de la imagen seleccionada en el formulario
 
 function segmentoVacio(){
-  return { texto:'', negrita:false, subrayado:false };
+  return { texto:'', negrita:false, subrayado:false, multilinea:false };
 }
 
 function renderizarSegmentosBorrador(){
@@ -1755,14 +1780,21 @@ function renderizarSegmentosBorrador(){
   segmentosBorrador.forEach((seg, idx) => {
     const fila = document.createElement('div');
     fila.className = 'segmento-item';
+    // Múltiples líneas: textarea redimensionable solo en vertical; si no, input de una línea (story: e05s02)
+    const control = seg.multilinea
+      ? `<textarea rows="1" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento" title="Redimensiona solo en altura"></textarea>`
+      : `<input type="text" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento">`;
     fila.innerHTML =
-      `<input type="text" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento">` +
+      `<div class="segmento-linea">${control}<button type="button" class="segmento-quitar" data-idx="${idx}" title="Quitar segmento">✕</button></div>` +
+      `<div class="segmento-checks">` +
       `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="negrita"> N</label>` +
       `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="subrayado"> S</label>` +
-      `<button type="button" class="segmento-quitar" data-idx="${idx}" title="Quitar segmento">✕</button>`;
+      `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="multilinea"> Múltiples líneas</label>` +
+      `</div>`;
     fila.querySelector('.segmento-texto').value = seg.texto;
     fila.querySelector('[data-campo="negrita"]').checked = seg.negrita;
     fila.querySelector('[data-campo="subrayado"]').checked = seg.subrayado;
+    fila.querySelector('[data-campo="multilinea"]').checked = seg.multilinea;
     cont.appendChild(fila);
   });
 }
@@ -1815,7 +1847,7 @@ function cargarBloqueEnFormulario(idx){
   mostrarCamposDe(b.tipo);
   if(b.tipo === 'texto'){
     segmentosBorrador = (b.segmentos && b.segmentos.length ? b.segmentos : [segmentoVacio()])
-      .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado }));
+      .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado, multilinea: !!s.multilinea }));
     el('campoAlineacion').value = b.alineacion || 'left';
     el('campoTamano').value = b.tamano || 'normal';
     el('campoFuente').value = b.fuente || 'A';
@@ -1864,6 +1896,9 @@ el('listaSegmentos').addEventListener('change', (e) => {
   if(e.target.classList.contains('segmento-check')){
     const idx = parseInt(e.target.dataset.idx, 10);
     segmentosBorrador[idx][e.target.dataset.campo] = e.target.checked;
+    if(e.target.dataset.campo === 'multilinea'){
+      renderizarSegmentosBorrador(); // intercambia input ⇄ textarea y reajusta a una línea al desmarcar
+    }
   }
 });
 el('listaSegmentos').addEventListener('click', (e) => {
