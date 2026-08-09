@@ -188,6 +188,17 @@
     font-size:12px;
   }
   .bloque-item.editando{ outline:2px solid var(--teal); }
+  .bloque-item{
+    cursor:grab;
+    transition:transform .22s cubic-bezier(.2,.7,.3,1), opacity .2s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+  .bloque-item.arrastrando{
+    opacity:.55;
+    box-shadow:0 14px 30px rgba(0,0,0,.55);
+    border:1px dashed var(--teal);
+    position:relative;
+    z-index:5;
+  }
   .bloque-resumen{ flex:1; margin-right:8px; word-break:break-word; }
   .bloque-controles button{
     padding:3px 7px;
@@ -198,7 +209,7 @@
 
   .segmento-item{
     display:flex;
-    align-items:center;
+    flex-direction:column;
     gap:6px;
     background:#1c1c1a;
     border:1px solid #34342f;
@@ -206,10 +217,33 @@
     padding:6px 8px;
     margin-bottom:6px;
   }
-  .segmento-item input[type=text]{
+  .segmento-linea{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .segmento-linea .segmento-texto{
     flex:1;
     padding:5px 8px;
     font-size:12px;
+    box-sizing:border-box;
+  }
+  .segmento-linea textarea.segmento-texto{
+    resize:vertical;   /* solo altura: solo se estira verticalmente (story: e05s02) */
+    min-height:38px;
+    max-height:240px;
+    line-height:1.4;
+    border:1px solid #34342f;
+    border-radius:4px;
+    background:#171715;
+    color:var(--text);
+    width:100%;
+  }
+  .segmento-checks{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
   }
   .segmento-item label{
     display:flex;
@@ -219,6 +253,7 @@
     font-size:11px;
     white-space:nowrap;
     color:#c8c4b0;
+    cursor:pointer;
   }
   .segmento-item button{
     padding:3px 7px;
@@ -270,7 +305,6 @@
   .receipt .barcode-bars{ display:flex; }
   .receipt .barcode-bars i{ display:block; min-width:1px; }
   .receipt .barcode-datos{ text-align:center; letter-spacing:3px; font-size:11px; margin-top:2px; }
-  .receipt .barcode-datos.fuente-b{ font-size:75%; } /* texto del QR bajo el código en Fuente B */
   .receipt .qr-holder{ display:flex; margin:6px 0; }
   .receipt .qr-box{ display:grid; grid-template-columns:repeat(21,1fr); margin:0 0 2px; }
   .receipt .qr-box i{ aspect-ratio:1; background:#fff; }
@@ -1213,6 +1247,7 @@ function resumenBloque(b){
     if(b.fuente === 'B') partes.push('Fuente B');
     if(formatos.size) partes.push([...formatos].join('+'));
     if(b.segmentos.length > 1) partes.push(`${b.segmentos.length} segmentos`);
+    if(b.segmentos.some(s => s.multilinea)) partes.push('multilínea');
     const extra = partes.length ? ` (${partes.join(', ')})` : '';
     const previewTxt = textoCompleto.length > 30 ? textoCompleto.slice(0,30) + '…' : textoCompleto;
     return `Texto: "${previewTxt}"${extra}`;
@@ -1248,6 +1283,8 @@ function renderizarListaBloques(){
   bloques.forEach((bloque, idx) => {
     const fila = document.createElement('div');
     fila.className = 'bloque-item' + (editandoIdx === idx ? ' editando' : '');
+    fila.draggable = true;           // reordenar por drag & drop — story: e05s03
+    fila.dataset.idx = String(idx);
 
     const resumen = document.createElement('span');
     resumen.className = 'bloque-resumen';
@@ -1455,9 +1492,9 @@ function renderizarBloquesDirecto(listaBloques){
       contenedor.appendChild(holder);
       if(b.mostrarDatos !== false){
         const etiq = document.createElement('div');
-        etiq.className = 'barcode-datos fuente-b'; // texto bajo el QR en Fuente B
-        etiq.textContent = b.datos || '';
+        etiq.className = 'linea fuente-b'; // mismo estilo visual que un bloque Texto en Fuente B — story: e05s01
         etiq.style.textAlign = alineacion;
+        etiq.textContent = b.datos || '';
         contenedor.appendChild(etiq);
       }
     } else if(b.tipo === 'image'){
@@ -1747,7 +1784,7 @@ let editandoIdx = null; // índice del bloque en edición (modo editar), o null 
 let imagenBorrador = null; // { img, naturalW, naturalH } de la imagen seleccionada en el formulario
 
 function segmentoVacio(){
-  return { texto:'', negrita:false, subrayado:false };
+  return { texto:'', negrita:false, subrayado:false, multilinea:false };
 }
 
 function renderizarSegmentosBorrador(){
@@ -1756,14 +1793,21 @@ function renderizarSegmentosBorrador(){
   segmentosBorrador.forEach((seg, idx) => {
     const fila = document.createElement('div');
     fila.className = 'segmento-item';
+    // Múltiples líneas: textarea redimensionable solo en vertical; si no, input de una línea (story: e05s02)
+    const control = seg.multilinea
+      ? `<textarea rows="1" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento" title="Redimensiona solo en altura"></textarea>`
+      : `<input type="text" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento">`;
     fila.innerHTML =
-      `<input type="text" class="segmento-texto" data-idx="${idx}" placeholder="Texto del segmento">` +
+      `<div class="segmento-linea">${control}<button type="button" class="segmento-quitar" data-idx="${idx}" title="Quitar segmento">✕</button></div>` +
+      `<div class="segmento-checks">` +
       `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="negrita"> N</label>` +
       `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="subrayado"> S</label>` +
-      `<button type="button" class="segmento-quitar" data-idx="${idx}" title="Quitar segmento">✕</button>`;
+      `<label><input type="checkbox" class="segmento-check" data-idx="${idx}" data-campo="multilinea"> Múltiples líneas</label>` +
+      `</div>`;
     fila.querySelector('.segmento-texto').value = seg.texto;
     fila.querySelector('[data-campo="negrita"]').checked = seg.negrita;
     fila.querySelector('[data-campo="subrayado"]').checked = seg.subrayado;
+    fila.querySelector('[data-campo="multilinea"]').checked = seg.multilinea;
     cont.appendChild(fila);
   });
 }
@@ -1816,7 +1860,7 @@ function cargarBloqueEnFormulario(idx){
   mostrarCamposDe(b.tipo);
   if(b.tipo === 'texto'){
     segmentosBorrador = (b.segmentos && b.segmentos.length ? b.segmentos : [segmentoVacio()])
-      .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado }));
+      .map(s => ({ texto: s.texto || '', negrita: !!s.negrita, subrayado: !!s.subrayado, multilinea: !!s.multilinea }));
     el('campoAlineacion').value = b.alineacion || 'left';
     el('campoTamano').value = b.tamano || 'normal';
     el('campoFuente').value = b.fuente || 'A';
@@ -1865,6 +1909,9 @@ el('listaSegmentos').addEventListener('change', (e) => {
   if(e.target.classList.contains('segmento-check')){
     const idx = parseInt(e.target.dataset.idx, 10);
     segmentosBorrador[idx][e.target.dataset.campo] = e.target.checked;
+    if(e.target.dataset.campo === 'multilinea'){
+      renderizarSegmentosBorrador(); // intercambia input ⇄ textarea y reajusta a una línea al desmarcar
+    }
   }
 });
 el('listaSegmentos').addEventListener('click', (e) => {
@@ -1993,8 +2040,120 @@ el('listaBloques').addEventListener('click', (e) => {
   actualizarPreviewVisual();
 });
 
-el('btnActualizarPreviewBloques').addEventListener('click', () => {
+// ---- Reordenar bloques por drag & drop con reordenación viva (story: e05s03) ----
+// Mientras se arrastra, la lista se reordena en tiempo real: los bloques se
+// desplazan (animación FLIP) dejando un hueco en la posición donde caería el
+// bloque que se está moviendo. Al soltar, la posición final coincide con la
+// que se veía durante el arrastre; si se suelta fuera, recupera su sitio.
+let dragOrigen = -1;        // índice del bloque arrastrado en `bloques` (-1 = sin arrastre)
+let ordenOriginal = null;   // copia del array al empezar a arrastrar (para restaurar)
+let hoverPendiente = null;  // último hover sin procesar (throttle por rAF)
+let rAFProgramado = false;
+
+function reaplicarEstadoArrastre(){
+  const arrastrado = document.querySelector(`#listaBloques .bloque-item[data-idx="${dragOrigen}"]`);
+  if(arrastrado) arrastrado.classList.add('arrastrando');
+}
+
+// Re-renderiza la lista animando con FLIP los ítems que cambiaron de posición.
+function renderConFlip(){
+  const prev = new Map();
+  document.querySelectorAll('#listaBloques .bloque-item').forEach(el => {
+    prev.set(parseInt(el.dataset.idx, 10), el.getBoundingClientRect().top);
+  });
+  renderizarListaBloques();
+  document.querySelectorAll('#listaBloques .bloque-item').forEach(el => {
+    const i = parseInt(el.dataset.idx, 10);
+    const topPrevio = prev.get(i);
+    if(topPrevio === undefined) return;
+    const delta = topPrevio - el.getBoundingClientRect().top;
+    if(Math.abs(delta) < 0.5) return;
+    el.style.transition = 'none';
+    el.style.transform = `translateY(${delta}px)`;
+    void el.offsetHeight; // fuerza reflow: aplica el salto antes de animar
+    el.style.transition = 'transform .22s cubic-bezier(.2,.7,.3,1)';
+    el.style.transform = '';
+  });
+  reaplicarEstadoArrastre();
+}
+
+// Reordena `bloques` en vivo según dónde apunte el cursor (mitad superior/inferior
+// del ítem bajo el cursor). ins === from → ya acomodado, sin cambio.
+function procesarHover(sobreIdx, antes){
+  if(dragOrigen < 0 || sobreIdx === dragOrigen) return;
+  const from = dragOrigen;
+  let ins;
+  if(antes) ins = (sobreIdx > from) ? sobreIdx - 1 : sobreIdx;
+  else      ins = (sobreIdx > from) ? sobreIdx : sobreIdx + 1;
+  if(ins === from) return;
+  const [movido] = bloques.splice(from, 1);
+  bloques.splice(ins, 0, movido);
+  dragOrigen = ins;
+  renderConFlip();
+}
+
+el('listaBloques').addEventListener('dragstart', (e) => {
+  const fila = e.target.closest('.bloque-item');
+  if(!fila || e.target.closest('button')){ e.preventDefault(); return; } // los botones no arrastran
+  dragOrigen = parseInt(fila.dataset.idx, 10);
+  ordenOriginal = bloques.slice();
+  fila.classList.add('arrastrando');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(dragOrigen)); // Firefox requiere setData
+});
+
+el('listaBloques').addEventListener('dragover', (e) => {
+  e.preventDefault(); // necesario para permitir soltar
+  if(dragOrigen < 0 || bloques.length < 2) return;
+  e.dataTransfer.dropEffect = 'move';
+  const fila = e.target.closest('.bloque-item');
+  if(!fila){
+    // Sin ítem bajo el cursor (márgenes del listado): si está dentro de la lista, apuntar al final.
+    const rc = el('listaBloques').getBoundingClientRect();
+    if(e.clientY > rc.top && e.clientY < rc.bottom){
+      hoverPendiente = { sobreIdx: bloques.length - 1, antes: false };
+    } else {
+      return;
+    }
+  } else {
+    const rect = fila.getBoundingClientRect();
+    hoverPendiente = {
+      sobreIdx: parseInt(fila.dataset.idx, 10),
+      antes: (e.clientY - rect.top) < rect.height / 2
+    };
+  }
+  if(rAFProgramado) return;
+  rAFProgramado = true;
+  requestAnimationFrame(() => {
+    rAFProgramado = false;
+    if(hoverPendiente) procesarHover(hoverPendiente.sobreIdx, hoverPendiente.antes);
+  });
+});
+
+el('listaBloques').addEventListener('drop', (e) => {
+  e.preventDefault();
+  if(dragOrigen < 0) return;
+  if(hoverPendiente) procesarHover(hoverPendiente.sobreIdx, hoverPendiente.antes); // acomoda el último hover
+  dragOrigen = -1;
+  ordenOriginal = null;
+  hoverPendiente = null;
+  rAFProgramado = false;
+  finalizarModoEdicion(false); // los índices cambiaron: salir de edición (igual que subir/bajar)
+  renderizarListaBloques();
   actualizarPreviewVisual();
+});
+
+el('listaBloques').addEventListener('dragend', () => {
+  if(dragOrigen >= 0 && ordenOriginal){
+    // Se soltó fuera de una posición válida → recuperar el orden original.
+    bloques.splice(0, bloques.length, ...ordenOriginal);
+    renderizarListaBloques();
+    actualizarPreviewVisual();
+  }
+  dragOrigen = -1;
+  ordenOriginal = null;
+  hoverPendiente = null;
+  rAFProgramado = false;
 });
 
 el('campoAlturaBarras').addEventListener('input', (e) => {
