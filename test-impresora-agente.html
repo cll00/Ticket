@@ -270,7 +270,6 @@
   .receipt .barcode-bars{ display:flex; }
   .receipt .barcode-bars i{ display:block; min-width:1px; }
   .receipt .barcode-datos{ text-align:center; letter-spacing:3px; font-size:11px; margin-top:2px; }
-  .receipt .barcode-datos.fuente-b{ font-size:75%; } /* texto del QR bajo el código en Fuente B */
   .receipt .qr-holder{ display:flex; margin:6px 0; }
   .receipt .qr-box{ display:grid; grid-template-columns:repeat(21,1fr); margin:0 0 2px; }
   .receipt .qr-box i{ aspect-ratio:1; background:#fff; }
@@ -1455,9 +1454,9 @@ function renderizarBloquesDirecto(listaBloques){
       contenedor.appendChild(holder);
       if(b.mostrarDatos !== false){
         const etiq = document.createElement('div');
-        etiq.className = 'barcode-datos fuente-b'; // texto bajo el QR en Fuente B
-        etiq.textContent = b.datos || '';
+        etiq.className = 'linea fuente-b'; // mismo estilo visual que un bloque Texto en Fuente B — story: e05s01
         etiq.style.textAlign = alineacion;
+        etiq.textContent = b.datos || '';
         contenedor.appendChild(etiq);
       }
     } else if(b.tipo === 'image'){
