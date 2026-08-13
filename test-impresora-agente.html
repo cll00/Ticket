@@ -2165,6 +2165,10 @@ el('campoAlturaBarras').addEventListener('input', (e) => {
   e.target.value = v;
 });
 
+// Enlaza el botón "Actualizar vista previa" del panel "Bloques del ticket" a
+// la preview de bloques (la del Probador usa btnPreview). — BUG-0005
+el('btnActualizarPreviewBloques').addEventListener('click', actualizarPreviewVisual);
+
 el('btnLimpiarBloques').addEventListener('click', () => {
   bloques = [];
   renderizarListaBloques();
