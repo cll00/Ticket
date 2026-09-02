@@ -91,7 +91,7 @@ test('anchoTotalTabla: sin bordes suma anchos + (columnas-1) espacios', () => {
 });
 
 test('lineaFilaTabla: sin bordes une celdas con un espacio', () => {
-  const { anchoColumnasTabla, lineaFilaTabla } = cargar('anchoColumnasTabla', 'lineaFilaTabla');
+  const { anchoColumnasTabla, celdaFormateada, lineaFilaTabla } = cargar('anchoColumnasTabla', 'celdaFormateada', 'lineaFilaTabla');
   const b = {
     columnas: 2,
     columnasConfig: [{ autoajuste: true, ancho: null }, { autoajuste: false, ancho: 3 }],
