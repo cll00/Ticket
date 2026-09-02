@@ -743,6 +743,63 @@ function cplSegunFuente(fuente, anchoPapel){
   return fuente === 'B' ? (base === 48 ? 64 : 42) : base;
 }
 
+// ===== Bloque "Tabla" — layout compartido (story: e06s01) =====
+// La tabla se simula con texto monoespaciado (no hay comando ESC/POS nativo).
+// Estas funciones son puras y las comparten bloquesABytes, renderizarBloquesDirecto
+// y bloquesAPhpCodigo. El papel se consulta en cada render desde el('anchoPapel').
+const MAX_FILAS_TABLA = 100;   // tope de filas, parametrizable (decisión §12.1)
+const PADDING_CELDA = 1;       // espacio a cada lado del texto, solo cuando hay bordes
+
+// Ancho de cada columna en caracteres de TEXTO (sin padding ni bordes).
+function anchoColumnasTabla(b){
+  const anchos = [];
+  for(let c = 0; c < b.columnas; c++){
+    const cfg = b.columnasConfig[c];
+    if(cfg.autoajuste){
+      let max = 0;
+      for(const fila of b.filas){
+        max = Math.max(max, [...(fila[c]?.texto || '')].length);
+      }
+      anchos.push(Math.max(1, max));
+    } else {
+      anchos.push(Math.max(1, parseInt(cfg.ancho, 10) || 1));
+    }
+  }
+  return anchos;
+}
+
+// Trunca+alinea el texto de una celda al ancho de su columna (caracteres, no bytes).
+function celdaFormateada(texto, ancho, alineacion){
+  let chars = [...(texto || '')];
+  if(chars.length > ancho) chars = chars.slice(0, ancho);   // truncado fijo
+  const t = chars.join('');
+  const espacio = ancho - t.length;
+  if(alineacion === 'right')  return ' '.repeat(espacio) + t;
+  if(alineacion === 'center'){
+    const izq = Math.floor(espacio / 2), der = espacio - izq;
+    return ' '.repeat(izq) + t + ' '.repeat(der);
+  }
+  return t + ' '.repeat(espacio); // left (default)
+}
+
+// Ancho total de la tabla en caracteres de línea impresa (para validar contra cplSegunFuente).
+function anchoTotalTabla(b){
+  const anchos = anchoColumnasTabla(b);
+  const relleno = b.bordes ? PADDING_CELDA * 2 : 0;
+  const suma = anchos.reduce((acc, a) => acc + a + relleno, 0);
+  return b.bordes
+    ? suma + (b.columnas + 1)     // N columnas + (N+1) barras verticales
+    : suma + (b.columnas - 1);    // N columnas + (N-1) espacios de separación
+}
+
+// Línea de una fila (celdas ya formateadas). Con bordes activos añade padding y barras.
+function lineaFilaTabla(fila, anchos, bordesActivo, estilo){
+  const celdas = fila.map((c, i) => celdaFormateada(c.texto, anchos[i], c.alineacion));
+  return bordesActivo
+    ? estilo.vertical + celdas.map(t => ` ${t} `).join(estilo.vertical) + estilo.vertical
+    : celdas.join(' ');
+}
+
 // Códigos de barras y QR (solo editor visual; story e03s02/e03s03).
 // GS k m n d1..dn NUL — m según simbología. El dato va en ASCII.
 const MAPA_BARRAS = { code39:4, code128:69, ean13:2, ean8:3, upca:0 };
