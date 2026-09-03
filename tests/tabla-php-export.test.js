@@ -57,13 +57,25 @@ test('phpValorTabla: genera el array literal con datos y formatos', () => {
   const out = phpValorTabla(muestra);
   assert.match(out, /'fuente' => 'A'/);
   assert.match(out, /'bordes' => false/);
+  assert.match(out, /'estiloBorde' => 'basico'/);
   assert.match(out, /'encabezado' => false/);
+  assert.match(out, /'grilla' => false/);
   assert.match(out, /'autoajuste'=>true/);
   assert.match(out, /'autoajuste'=>false,'ancho'=>4/);
   assert.match(out, /'texto'=>"Producto"/);
   assert.match(out, /'texto'=>"Té"/);
   assert.match(out, /'negrita'=>true/);
   assert.match(out, /'subrayado'=>true/);
+});
+
+test('phpValorTabla: propaga bordes, estilo, encabezado y grilla', () => {
+  const { phpValorTabla } = cargar();
+  const conBordes = Object.assign({}, muestra, { bordes: true, estiloBorde: 'doble', encabezado: true, grilla: true });
+  const out = phpValorTabla(conBordes);
+  assert.match(out, /'bordes' => true/);
+  assert.match(out, /'estiloBorde' => 'doble'/);
+  assert.match(out, /'encabezado' => true/);
+  assert.match(out, /'grilla' => true/);
 });
 
 test('PHP generado: sintaxis válida y bytes ESC/POS esperados', (t) => {
