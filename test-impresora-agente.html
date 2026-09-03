@@ -829,6 +829,30 @@ function lineaFilaTabla(fila, anchos, bordesActivo, estilo){
     : celdas.join(' ');
 }
 
+// Estilos de borde de la tabla (story: e06s02). Un solo carácter de esquina/cruce,
+// usado en las 4 esquinas y en cada intersección intermedia (spec-bloque-tabla.md §3).
+const ESTILOS_BORDE_TABLA = {
+  basico:     { esquina:'+', horizontal:'-', vertical:'|' },
+  doble:      { esquina:'+', horizontal:'=', vertical:'|' },
+  punteado:   { esquina:'+', horizontal:'.', vertical:':' },
+  asteriscos: { esquina:'*', horizontal:'-', vertical:'*' }
+};
+
+// Línea de borde horizontal (superior/inferior o separador completo con bordes).
+function lineaBordeTabla(anchos, estilo){
+  const relleno = PADDING_CELDA * 2;
+  const partes = anchos.map(a => estilo.horizontal.repeat(a + relleno));
+  return estilo.esquina + partes.join(estilo.esquina) + estilo.esquina;
+}
+
+// Línea separadora: con bordes = línea de borde completa; sin bordes = solo el carácter
+// horizontal abarcando el ancho total de la tabla. Se usa para encabezado y grilla.
+function lineaSeparadorEncabezado(anchos, estilo, bordesActivo){
+  if(bordesActivo) return lineaBordeTabla(anchos, estilo);
+  const anchoTotal = anchos.reduce((a, b2) => a + b2, 0) + (anchos.length - 1);
+  return estilo.horizontal.repeat(anchoTotal);
+}
+
 // Códigos de barras y QR (solo editor visual; story e03s02/e03s03).
 // GS k m n d1..dn NUL — m según simbología. El dato va en ASCII.
 const MAPA_BARRAS = { code39:4, code128:69, ean13:2, ean8:3, upca:0 };
