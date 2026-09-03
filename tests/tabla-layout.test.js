@@ -100,3 +100,25 @@ test('lineaFilaTabla: sin bordes une celdas con un espacio', () => {
   const anchos = anchoColumnasTabla(b);
   assert.strictEqual(lineaFilaTabla(b.filas[0], anchos, false), 'AB' + ' '.repeat(3) + '123');
 });
+
+// ===== e06s02 — bordes, encabezado y grilla =====
+
+test('lineaBordeTabla: dibuja el borde con el estilo elegido', () => {
+  const { lineaBordeTabla } = cargar('lineaBordeTabla');
+  assert.strictEqual(lineaBordeTabla([4, 3], ESTILOS.basico), '+------+-----+');
+  assert.strictEqual(lineaBordeTabla([4, 3], ESTILOS.doble), '+======+=====+');
+  assert.strictEqual(lineaBordeTabla([4, 3], ESTILOS.punteado), '+......+.....+');
+  assert.strictEqual(lineaBordeTabla([4, 3], ESTILOS.asteriscos), '*------*-----*');
+});
+
+test('lineaFilaTabla: con bordes añade padding y barras verticales', () => {
+  const { lineaFilaTabla } = cargar('celdaFormateada', 'lineaFilaTabla');
+  const fila = [{ texto: 'AB', alineacion: 'left' }, { texto: '123', alineacion: 'right' }];
+  assert.strictEqual(lineaFilaTabla(fila, [4, 3], true, ESTILOS.basico), '| AB   | 123 |');
+});
+
+test('lineaSeparadorEncabezado: con bordes usa el borde; sin bordes usa el carácter horizontal', () => {
+  const { lineaSeparadorEncabezado } = cargar('lineaSeparadorEncabezado');
+  assert.strictEqual(lineaSeparadorEncabezado([4, 3], ESTILOS.basico, true), '+------+-----+');
+  assert.strictEqual(lineaSeparadorEncabezado([4, 3], ESTILOS.basico, false), '--------');
+});
