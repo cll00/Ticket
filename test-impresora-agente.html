@@ -552,6 +552,21 @@
               </select>
             </div>
           </div>
+          <div class="row">
+            <div>
+              <label><input type="checkbox" id="campoBordesTabla"> Bordes</label>
+              <select id="campoEstiloBordeTabla" style="margin-top:4px; width:100%">
+                <option value="basico" selected>Básico</option>
+                <option value="doble">Doble</option>
+                <option value="punteado">Punteado</option>
+                <option value="asteriscos">Asteriscos</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block"><input type="checkbox" id="campoEncabezadoTabla"> Usar primera fila como encabezado</label>
+              <label style="display:block; margin-top:8px"><input type="checkbox" id="campoGrillaTabla"> Grilla completa (línea entre filas)</label>
+            </div>
+          </div>
           <label>Configuración por columna</label>
           <div id="listaColumnasTabla"></div>
           <label>Filas y celdas</label>
@@ -1327,8 +1342,8 @@ let bloques = [
     { texto:'TOTAL: ', negrita:true, subrayado:false },
     { texto:'$3000', negrita:false, subrayado:true }
   ]},
-  // Tabla — atr: 3 columnas (autoajuste + 2 fijas), sin bordes (story: e06s01)
-  { tipo:'tabla', fuente:'A', columnas:3, columnasConfig:[
+  // Tabla — atr: 3 columnas (autoajuste + 2 fijas), bordes basico + encabezado (story: e06s02)
+  { tipo:'tabla', fuente:'A', columnas:3, bordes:true, estiloBorde:'basico', encabezado:true, grilla:false, columnasConfig:[
     { autoajuste:true, ancho:null },
     { autoajuste:false, ancho:5 },
     { autoajuste:false, ancho:7 }
@@ -1541,18 +1556,47 @@ function bloquesABytes(listaBloques){
       asegurarAlineacion('left');     // alineación forzada: el centrado/derecha se hace con padding de celda
       asegurarTamano('normal');       // tamaño forzado: doble ancho/alto rompería cplSegunFuente
       asegurarFuente(b.fuente || 'A');
+      const estiloTabla = ESTILOS_BORDE_TABLA[b.estiloBorde] || ESTILOS_BORDE_TABLA.basico;
       const anchos = anchoColumnasTabla(b);
-      b.filas.forEach((fila) => {
-        fila.forEach((celda, i) => {
-          asegurarNegrita(!!celda.negrita);
-          asegurarSubrayado(!!celda.subrayado);
-          bytes.push(...textoABytes(celdaFormateada(celda.texto, anchos[i], celda.alineacion), modo));
+
+      const emitirLineaPlana = (str) => {
+        asegurarNegrita(false);
+        asegurarSubrayado(false);
+        bytes.push(...textoABytes(str, modo));
+        bytes.push(0x0A);
+      };
+
+      if(b.bordes) emitirLineaPlana(lineaBordeTabla(anchos, estiloTabla));
+
+      b.filas.forEach((fila, i) => {
+        if(b.bordes){
           asegurarNegrita(false);
           asegurarSubrayado(false);
-          if(i < fila.length - 1) bytes.push(...textoABytes(' ', modo));
+          bytes.push(...textoABytes(estiloTabla.vertical, modo));
+        }
+        fila.forEach((celda, c) => {
+          if(b.bordes) bytes.push(...textoABytes(' ', modo));
+          asegurarNegrita(!!celda.negrita);
+          asegurarSubrayado(!!celda.subrayado);
+          bytes.push(...textoABytes(celdaFormateada(celda.texto, anchos[c], celda.alineacion), modo));
+          asegurarNegrita(false);
+          asegurarSubrayado(false);
+          if(b.bordes){
+            bytes.push(...textoABytes(' ', modo));
+            bytes.push(...textoABytes(estiloTabla.vertical, modo));
+          } else if(c < fila.length - 1){
+            bytes.push(...textoABytes(' ', modo));
+          }
         });
         bytes.push(0x0A);
+
+        const esUltima = i === b.filas.length - 1;
+        if(!esUltima && ((i === 0 && b.encabezado) || b.grilla)){
+          emitirLineaPlana(lineaSeparadorEncabezado(anchos, estiloTabla, b.bordes));
+        }
       });
+
+      if(b.bordes) emitirLineaPlana(lineaBordeTabla(anchos, estiloTabla));
     }
   }
   return bytes;
@@ -1657,19 +1701,43 @@ function renderizarBloquesDirecto(listaBloques){
       img.style.imageRendering = 'pixelated';
       lineaImg.appendChild(img);
     } else if(b.tipo === 'tabla'){
+      const estiloTabla = ESTILOS_BORDE_TABLA[b.estiloBorde] || ESTILOS_BORDE_TABLA.basico;
       const anchos = anchoColumnasTabla(b);
-      b.filas.forEach((fila) => {
+      const nuevaLineaTabla = (texto) => {
         const linea = nuevaLineaEn('left');
         if(b.fuente === 'B') linea.classList.add('fuente-b');
-        fila.forEach((celda, i) => {
-          if(i > 0) linea.appendChild(document.createTextNode(' '));
+        linea.textContent = texto;
+        return linea;
+      };
+
+      if(b.bordes) nuevaLineaTabla(lineaBordeTabla(anchos, estiloTabla));
+
+      b.filas.forEach((fila, i) => {
+        const linea = nuevaLineaEn('left');
+        if(b.fuente === 'B') linea.classList.add('fuente-b');
+        if(b.bordes) linea.appendChild(document.createTextNode(estiloTabla.vertical));
+        fila.forEach((celda, c) => {
+          if(b.bordes) linea.appendChild(document.createTextNode(' '));
           const span = document.createElement('span');
           if(celda.negrita) span.style.fontWeight = '700';
           if(celda.subrayado) span.style.textDecoration = 'underline';
-          span.textContent = celdaFormateada(celda.texto, anchos[i], celda.alineacion);
+          span.textContent = celdaFormateada(celda.texto, anchos[c], celda.alineacion);
           linea.appendChild(span);
+          if(b.bordes){
+            linea.appendChild(document.createTextNode(' '));
+            linea.appendChild(document.createTextNode(estiloTabla.vertical));
+          } else if(c < fila.length - 1){
+            linea.appendChild(document.createTextNode(' '));
+          }
         });
+
+        const esUltima = i === b.filas.length - 1;
+        if(!esUltima && ((i === 0 && b.encabezado) || b.grilla)){
+          nuevaLineaTabla(lineaSeparadorEncabezado(anchos, estiloTabla, b.bordes));
+        }
       });
+
+      if(b.bordes) nuevaLineaTabla(lineaBordeTabla(anchos, estiloTabla));
     }
   }
   return contenedor;
@@ -1757,7 +1825,8 @@ function agregar_bloque_tabla(&$ticket, $ESC, $GS, $tabla) {
       : implode(' ', $piezas);
     $ticket .= "\n";
 
-    if ($i === 0 && $tabla['encabezado']) {
+    $esUltima = ($i === count($tabla['filas']) - 1);
+    if (!$esUltima && (($i === 0 && $tabla['encabezado']) || $tabla['grilla'])) {
       $ticket .= $bordes
         ? _tabla_linea_borde($anchos, $estilo)
         : str_repeat($estilo['horizontal'], array_sum($anchos) + (count($anchos) - 1));
@@ -1783,9 +1852,10 @@ function phpValorTabla(b){
     return '[' + celdas.join(',') + ']';
   });
   return "[\n    'fuente' => '" + (b.fuente === 'B' ? 'B' : 'A') + "',\n"
-    + "    'bordes' => false,\n"
-    + "    'estiloBorde' => 'basico',\n"
-    + "    'encabezado' => false,\n"
+    + "    'bordes' => " + (b.bordes ? 'true' : 'false') + ",\n"
+    + "    'estiloBorde' => '" + (b.estiloBorde || 'basico') + "',\n"
+    + "    'encabezado' => " + (b.encabezado ? 'true' : 'false') + ",\n"
+    + "    'grilla' => " + (b.grilla ? 'true' : 'false') + ",\n"
     + "    'columnasConfig' => [" + cfg.join(',') + "],\n"
     + "    'filas' => [" + filas.join(',') + "]\n  ]";
 }
@@ -2113,6 +2183,10 @@ function tablaBorradorVacio(){
   return {
     fuente: 'A',
     columnas: 3,
+    bordes: false,
+    estiloBorde: 'basico',   // se persiste aunque bordes=false (spec-bloque-tabla.md §3.1)
+    encabezado: false,
+    grilla: false,
     columnasConfig: [columnaConfigVacia(), columnaConfigVacia(), columnaConfigVacia()],
     filas: [filaVacia(3), filaVacia(3)]
   };
@@ -2198,6 +2272,7 @@ function renderizarTablaBorrador(){
     contFilas.appendChild(cajaFila);
   });
 
+  el('campoEstiloBordeTabla').disabled = !tablaBorrador.bordes;
   actualizarIndicadorAnchoTabla();
 }
 
@@ -2269,6 +2344,19 @@ el('campoColumnasTabla').addEventListener('change', () => {
   tablaBorrador.columnas = n;
   renderizarTablaBorrador();
 });
+el('campoBordesTabla').addEventListener('change', () => {
+  tablaBorrador.bordes = el('campoBordesTabla').checked;
+  renderizarTablaBorrador(); // habilita/deshabilita el estilo y recalcula el ancho
+});
+el('campoEstiloBordeTabla').addEventListener('change', () => {
+  tablaBorrador.estiloBorde = el('campoEstiloBordeTabla').value;
+});
+el('campoEncabezadoTabla').addEventListener('change', () => {
+  tablaBorrador.encabezado = el('campoEncabezadoTabla').checked;
+});
+el('campoGrillaTabla').addEventListener('change', () => {
+  tablaBorrador.grilla = el('campoGrillaTabla').checked;
+});
 
 function resetearFormulario(){
   el('nuevoTipoBloque').value = 'texto';
@@ -2302,6 +2390,10 @@ function resetearFormulario(){
   tablaBorrador = tablaBorradorVacio();
   el('campoFuenteTabla').value = 'A';
   el('campoColumnasTabla').value = '3';
+  el('campoBordesTabla').checked = false;
+  el('campoEstiloBordeTabla').value = 'basico';
+  el('campoEncabezadoTabla').checked = false;
+  el('campoGrillaTabla').checked = false;
   renderizarTablaBorrador();
   renderizarSegmentosBorrador();
 }
@@ -2360,11 +2452,19 @@ function cargarBloqueEnFormulario(idx){
     tablaBorrador = {
       fuente: b.fuente || 'A',
       columnas: b.columnas,
+      bordes: !!b.bordes,
+      estiloBorde: b.estiloBorde || 'basico',
+      encabezado: !!b.encabezado,
+      grilla: !!b.grilla,
       columnasConfig: (b.columnasConfig || []).map(cfg => ({ autoajuste: !!cfg.autoajuste, ancho: cfg.ancho ?? null })),
       filas: (b.filas || []).map(fila => fila.map(celda => ({ texto: celda.texto || '', alineacion: celda.alineacion || 'left', negrita: !!celda.negrita, subrayado: !!celda.subrayado })))
     };
     el('campoFuenteTabla').value = tablaBorrador.fuente;
     el('campoColumnasTabla').value = String(tablaBorrador.columnas);
+    el('campoBordesTabla').checked = tablaBorrador.bordes;
+    el('campoEstiloBordeTabla').value = tablaBorrador.estiloBorde;
+    el('campoEncabezadoTabla').checked = tablaBorrador.encabezado;
+    el('campoGrillaTabla').checked = tablaBorrador.grilla;
     renderizarTablaBorrador();
   }
   el('btnAgregarBloque').textContent = 'Guardar cambios';
@@ -2483,12 +2583,20 @@ el('btnAgregarBloque').addEventListener('click', () => {
       tipo: 'tabla',
       fuente: tablaBorrador.fuente,
       columnas: tablaBorrador.columnas,
+      bordes: !!tablaBorrador.bordes,
+      estiloBorde: tablaBorrador.estiloBorde || 'basico',
+      encabezado: !!tablaBorrador.encabezado,
+      grilla: !!tablaBorrador.grilla,
       columnasConfig: tablaBorrador.columnasConfig.map(cfg => ({ autoajuste: !!cfg.autoajuste, ancho: cfg.ancho ?? null })),
       filas: tablaBorrador.filas.map(fila => fila.map(celda => ({ texto: celda.texto || '', alineacion: celda.alineacion || 'left', negrita: !!celda.negrita, subrayado: !!celda.subrayado })))
     };
     tablaBorrador = tablaBorradorVacio();
     el('campoFuenteTabla').value = 'A';
     el('campoColumnasTabla').value = '3';
+    el('campoBordesTabla').checked = false;
+    el('campoEstiloBordeTabla').value = 'basico';
+    el('campoEncabezadoTabla').checked = false;
+    el('campoGrillaTabla').checked = false;
     renderizarTablaBorrador();
   } else {
     bloque = { tipo }; // salto
