@@ -118,7 +118,7 @@ test('lineaFilaTabla: con bordes añade padding y barras verticales', () => {
 });
 
 test('lineaSeparadorEncabezado: con bordes usa el borde; sin bordes usa el carácter horizontal', () => {
-  const { lineaSeparadorEncabezado } = cargar('lineaSeparadorEncabezado');
+  const { lineaSeparadorEncabezado } = cargar('lineaBordeTabla', 'lineaSeparadorEncabezado');
   assert.strictEqual(lineaSeparadorEncabezado([4, 3], ESTILOS.basico, true), '+------+-----+');
   assert.strictEqual(lineaSeparadorEncabezado([4, 3], ESTILOS.basico, false), '--------');
 });
