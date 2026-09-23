@@ -262,6 +262,44 @@
     flex-shrink:0;
   }
 
+  /* --- Usabilidad panel "Filas y celdas" del bloque Tabla (story: e07s01) --- */
+  .tabla-fila-cab{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:4px;
+  }
+  .tabla-fila-quitar{
+    background:#3a3a37;
+    color:var(--paper-light);
+    padding:2px 6px;
+    font-size:11px;
+    border:1px solid #34342f;
+    border-radius:3px;
+  }
+  .tabla-fila-quitar:not(:disabled):hover,
+  .tabla-fila-quitar:not(:disabled):focus{
+    color:#fff;
+    background:var(--red);
+    border-color:var(--red);
+    opacity:1;
+  }
+  .tabla-celda-formato{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .tabla-celda-formato label{
+    display:inline-flex;
+    align-items:center;
+    gap:2px;
+    margin:0;
+    font-size:11px;
+    white-space:nowrap;
+    color:#c8c4b0;
+    cursor:pointer;
+  }
+
   /* --- Vista previa estilo ticket real --- */
   .receipt-wrapper{
     display:flex;
@@ -374,6 +412,7 @@
           <option value="barcode">Código de barras</option>
           <option value="qr">Código QR</option>
           <option value="image">Imagen</option>
+          <option value="tabla">Tabla</option>
         </select>
 
         <div id="camposTexto">
@@ -530,6 +569,49 @@
             <option value="right">Derecha</option>
           </select>
           <p class="hint" id="campoImagenAlto">Alto: automático según el ancho elegido</p>
+        </div>
+
+        <div id="camposTabla" style="display:none">
+          <div class="row">
+            <div>
+              <label for="campoFuenteTabla">Fuente (toda la tabla)</label>
+              <select id="campoFuenteTabla">
+                <option value="A" selected>Fuente A</option>
+                <option value="B">Fuente B</option>
+              </select>
+            </div>
+            <div>
+              <label for="campoColumnasTabla">Cantidad de columnas (1–4)</label>
+              <select id="campoColumnasTabla">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label><input type="checkbox" id="campoBordesTabla"> Bordes</label>
+              <select id="campoEstiloBordeTabla" style="margin-top:4px; width:100%">
+                <option value="basico" selected>Básico</option>
+                <option value="doble">Doble</option>
+                <option value="punteado">Punteado</option>
+                <option value="asteriscos">Asteriscos</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block"><input type="checkbox" id="campoEncabezadoTabla"> Usar primera fila como encabezado</label>
+              <label style="display:block; margin-top:8px"><input type="checkbox" id="campoGrillaTabla"> Grilla completa (línea entre filas)</label>
+            </div>
+          </div>
+          <label>Configuración por columna</label>
+          <div id="listaColumnasTabla"></div>
+          <label>Filas y celdas</label>
+          <div id="listaFilasTabla"></div>
+          <button type="button" id="btnAgregarFilaTabla" class="btn-secondary btn-block">+ Agregar fila</button>
+          <div class="field-note">N = negrita · S = subrayado · el autoajuste toma el texto más largo de la columna</div>
+          <p class="field-note" id="campoAnchoTabla"></p>
         </div>
 
         <button id="btnAgregarBloque" class="btn-secondary btn-block">+ Agregar bloque</button>
@@ -741,6 +823,87 @@ function bytesABase64(bytesArray){
 function cplSegunFuente(fuente, anchoPapel){
   const base = parseInt(anchoPapel, 10);
   return fuente === 'B' ? (base === 48 ? 64 : 42) : base;
+}
+
+// ===== Bloque "Tabla" — layout compartido (story: e06s01) =====
+// La tabla se simula con texto monoespaciado (no hay comando ESC/POS nativo).
+// Estas funciones son puras y las comparten bloquesABytes, renderizarBloquesDirecto
+// y bloquesAPhpCodigo. El papel se consulta en cada render desde el('anchoPapel').
+const MAX_FILAS_TABLA = 100;   // tope de filas, parametrizable (decisión §12.1)
+const PADDING_CELDA = 1;       // espacio a cada lado del texto, solo cuando hay bordes
+
+// Ancho de cada columna en caracteres de TEXTO (sin padding ni bordes).
+function anchoColumnasTabla(b){
+  const anchos = [];
+  for(let c = 0; c < b.columnas; c++){
+    const cfg = b.columnasConfig[c];
+    if(cfg.autoajuste){
+      let max = 0;
+      for(const fila of b.filas){
+        max = Math.max(max, [...(fila[c]?.texto || '')].length);
+      }
+      anchos.push(Math.max(1, max));
+    } else {
+      anchos.push(Math.max(1, parseInt(cfg.ancho, 10) || 1));
+    }
+  }
+  return anchos;
+}
+
+// Trunca+alinea el texto de una celda al ancho de su columna (caracteres, no bytes).
+function celdaFormateada(texto, ancho, alineacion){
+  let chars = [...(texto || '')];
+  if(chars.length > ancho) chars = chars.slice(0, ancho);   // truncado fijo
+  const t = chars.join('');
+  const espacio = ancho - t.length;
+  if(alineacion === 'right')  return ' '.repeat(espacio) + t;
+  if(alineacion === 'center'){
+    const izq = Math.floor(espacio / 2), der = espacio - izq;
+    return ' '.repeat(izq) + t + ' '.repeat(der);
+  }
+  return t + ' '.repeat(espacio); // left (default)
+}
+
+// Ancho total de la tabla en caracteres de línea impresa (para validar contra cplSegunFuente).
+function anchoTotalTabla(b){
+  const anchos = anchoColumnasTabla(b);
+  const relleno = b.bordes ? PADDING_CELDA * 2 : 0;
+  const suma = anchos.reduce((acc, a) => acc + a + relleno, 0);
+  return b.bordes
+    ? suma + (b.columnas + 1)     // N columnas + (N+1) barras verticales
+    : suma + (b.columnas - 1);    // N columnas + (N-1) espacios de separación
+}
+
+// Línea de una fila (celdas ya formateadas). Con bordes activos añade padding y barras.
+function lineaFilaTabla(fila, anchos, bordesActivo, estilo){
+  const celdas = fila.map((c, i) => celdaFormateada(c.texto, anchos[i], c.alineacion));
+  return bordesActivo
+    ? estilo.vertical + celdas.map(t => ` ${t} `).join(estilo.vertical) + estilo.vertical
+    : celdas.join(' ');
+}
+
+// Estilos de borde de la tabla (story: e06s02). Un solo carácter de esquina/cruce,
+// usado en las 4 esquinas y en cada intersección intermedia (spec-bloque-tabla.md §3).
+const ESTILOS_BORDE_TABLA = {
+  basico:     { esquina:'+', horizontal:'-', vertical:'|' },
+  doble:      { esquina:'+', horizontal:'=', vertical:'|' },
+  punteado:   { esquina:'+', horizontal:'.', vertical:':' },
+  asteriscos: { esquina:'*', horizontal:'-', vertical:'*' }
+};
+
+// Línea de borde horizontal (superior/inferior o separador completo con bordes).
+function lineaBordeTabla(anchos, estilo){
+  const relleno = PADDING_CELDA * 2;
+  const partes = anchos.map(a => estilo.horizontal.repeat(a + relleno));
+  return estilo.esquina + partes.join(estilo.esquina) + estilo.esquina;
+}
+
+// Línea separadora: con bordes = línea de borde completa; sin bordes = solo el carácter
+// horizontal abarcando el ancho total de la tabla. Se usa para encabezado y grilla.
+function lineaSeparadorEncabezado(anchos, estilo, bordesActivo){
+  if(bordesActivo) return lineaBordeTabla(anchos, estilo);
+  const anchoTotal = anchos.reduce((a, b2) => a + b2, 0) + (anchos.length - 1);
+  return estilo.horizontal.repeat(anchoTotal);
 }
 
 // Códigos de barras y QR (solo editor visual; story e03s02/e03s03).
@@ -1217,6 +1380,22 @@ let bloques = [
     { texto:'TOTAL: ', negrita:true, subrayado:false },
     { texto:'$3000', negrita:false, subrayado:true }
   ]},
+  // Tabla — atr: 3 columnas (autoajuste + 2 fijas), bordes basico + encabezado (story: e06s02)
+  { tipo:'tabla', fuente:'A', columnas:3, bordes:true, estiloBorde:'basico', encabezado:true, grilla:false, columnasConfig:[
+    { autoajuste:true, ancho:null },
+    { autoajuste:false, ancho:5 },
+    { autoajuste:false, ancho:7 }
+  ], filas:[
+    [ { texto:'Producto',   alineacion:'left',   negrita:true,  subrayado:false },
+      { texto:'Cant',       alineacion:'center', negrita:true,  subrayado:false },
+      { texto:'Precio',     alineacion:'right',  negrita:true,  subrayado:false } ],
+    [ { texto:'Empanada carne', alineacion:'left',   negrita:false, subrayado:false },
+      { texto:'3',              alineacion:'center', negrita:false, subrayado:false },
+      { texto:'$4500',          alineacion:'right',  negrita:false, subrayado:false } ],
+    [ { texto:'Bebida 1.5L',    alineacion:'left',   negrita:false, subrayado:false },
+      { texto:'1',              alineacion:'center', negrita:false, subrayado:false },
+      { texto:'$2200',          alineacion:'right',  negrita:false, subrayado:false } ]
+  ]},
   // Texto — atr: tamaño=doble alto, alineación=centro
   { tipo:'texto', alineacion:'center', tamano:'alto', fuente:'A', segmentos:[
     { texto:'GRACIAS', negrita:false, subrayado:false }
@@ -1270,6 +1449,14 @@ function resumenBloque(b){
     const dit = { 'ninguno':'sin dither', 'floyd':'Floyd-Steinberg', 'bayer':'Bayer' }[b.dithering || 'bayer'];
     return `Imagen (Raster, ${b.ancho || 0}×${b.alto || 0} px, ${al}, ${dit})`;
   }
+  if(b.tipo === 'tabla'){
+    const partes = [`${b.columnas} col × ${b.filas.length} filas`];
+    partes.push(b.bordes ? `bordes ${b.estiloBorde}` : 'sin bordes');
+    if(b.encabezado) partes.push('con encabezado');
+    if(b.grilla) partes.push('grilla');
+    if(b.fuente === 'B') partes.push('Fuente B');
+    return `Tabla (${partes.join(', ')})`;
+  }
   return b.tipo;
 }
 
@@ -1296,7 +1483,7 @@ function renderizarListaBloques(){
     let botones =
       `<button type="button" data-accion="subir" data-idx="${idx}" title="Subir">↑</button>` +
       `<button type="button" data-accion="bajar" data-idx="${idx}" title="Bajar">↓</button>`;
-    if(['texto','separador','corte','barcode','qr','image'].includes(bloque.tipo)){
+    if(['texto','separador','corte','barcode','qr','image','tabla'].includes(bloque.tipo)){
       botones += `<button type="button" data-accion="editar" data-idx="${idx}" title="Editar">✏</button>`;
     }
     botones += `<button type="button" data-accion="eliminar" data-idx="${idx}" title="Eliminar">✕</button>`;
@@ -1403,6 +1590,51 @@ function bloquesABytes(listaBloques){
       asegurarAlineacion(b.alineacion || 'center');
       const dbytes = Array.from(atob(b.data || ''), c => c.charCodeAt(0));
       bytes.push(...GS_RASTER(parseInt(b.ancho, 10) || 1, parseInt(b.alto, 10) || 1, dbytes));
+    } else if(b.tipo === 'tabla'){
+      asegurarAlineacion('left');     // alineación forzada: el centrado/derecha se hace con padding de celda
+      asegurarTamano('normal');       // tamaño forzado: doble ancho/alto rompería cplSegunFuente
+      asegurarFuente(b.fuente || 'A');
+      const estiloTabla = ESTILOS_BORDE_TABLA[b.estiloBorde] || ESTILOS_BORDE_TABLA.basico;
+      const anchos = anchoColumnasTabla(b);
+
+      const emitirLineaPlana = (str) => {
+        asegurarNegrita(false);
+        asegurarSubrayado(false);
+        bytes.push(...textoABytes(str, modo));
+        bytes.push(0x0A);
+      };
+
+      if(b.bordes) emitirLineaPlana(lineaBordeTabla(anchos, estiloTabla));
+
+      b.filas.forEach((fila, i) => {
+        if(b.bordes){
+          asegurarNegrita(false);
+          asegurarSubrayado(false);
+          bytes.push(...textoABytes(estiloTabla.vertical, modo));
+        }
+        fila.forEach((celda, c) => {
+          if(b.bordes) bytes.push(...textoABytes(' ', modo));
+          asegurarNegrita(!!celda.negrita);
+          asegurarSubrayado(!!celda.subrayado);
+          bytes.push(...textoABytes(celdaFormateada(celda.texto, anchos[c], celda.alineacion), modo));
+          asegurarNegrita(false);
+          asegurarSubrayado(false);
+          if(b.bordes){
+            bytes.push(...textoABytes(' ', modo));
+            bytes.push(...textoABytes(estiloTabla.vertical, modo));
+          } else if(c < fila.length - 1){
+            bytes.push(...textoABytes(' ', modo));
+          }
+        });
+        bytes.push(0x0A);
+
+        const esUltima = i === b.filas.length - 1;
+        if(!esUltima && ((i === 0 && b.encabezado) || b.grilla)){
+          emitirLineaPlana(lineaSeparadorEncabezado(anchos, estiloTabla, b.bordes));
+        }
+      });
+
+      if(b.bordes) emitirLineaPlana(lineaBordeTabla(anchos, estiloTabla));
     }
   }
   return bytes;
@@ -1506,6 +1738,44 @@ function renderizarBloquesDirecto(listaBloques){
       img.style.height = 'auto';
       img.style.imageRendering = 'pixelated';
       lineaImg.appendChild(img);
+    } else if(b.tipo === 'tabla'){
+      const estiloTabla = ESTILOS_BORDE_TABLA[b.estiloBorde] || ESTILOS_BORDE_TABLA.basico;
+      const anchos = anchoColumnasTabla(b);
+      const nuevaLineaTabla = (texto) => {
+        const linea = nuevaLineaEn('left');
+        if(b.fuente === 'B') linea.classList.add('fuente-b');
+        linea.textContent = texto;
+        return linea;
+      };
+
+      if(b.bordes) nuevaLineaTabla(lineaBordeTabla(anchos, estiloTabla));
+
+      b.filas.forEach((fila, i) => {
+        const linea = nuevaLineaEn('left');
+        if(b.fuente === 'B') linea.classList.add('fuente-b');
+        if(b.bordes) linea.appendChild(document.createTextNode(estiloTabla.vertical));
+        fila.forEach((celda, c) => {
+          if(b.bordes) linea.appendChild(document.createTextNode(' '));
+          const span = document.createElement('span');
+          if(celda.negrita) span.style.fontWeight = '700';
+          if(celda.subrayado) span.style.textDecoration = 'underline';
+          span.textContent = celdaFormateada(celda.texto, anchos[c], celda.alineacion);
+          linea.appendChild(span);
+          if(b.bordes){
+            linea.appendChild(document.createTextNode(' '));
+            linea.appendChild(document.createTextNode(estiloTabla.vertical));
+          } else if(c < fila.length - 1){
+            linea.appendChild(document.createTextNode(' '));
+          }
+        });
+
+        const esUltima = i === b.filas.length - 1;
+        if(!esUltima && ((i === 0 && b.encabezado) || b.grilla)){
+          nuevaLineaTabla(lineaSeparadorEncabezado(anchos, estiloTabla, b.bordes));
+        }
+      });
+
+      if(b.bordes) nuevaLineaTabla(lineaBordeTabla(anchos, estiloTabla));
     }
   }
   return contenedor;
@@ -1522,6 +1792,112 @@ function phpEscapeString(str){
   return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+// Funciones auxiliares PHP para el bloque Tabla. Se emiten UNA sola vez en el
+// código generado (solo si hay algún bloque 'tabla') para no triplicar la lógica
+// cuando el ticket tiene varias tablas (spec-bloque-tabla.md §9). Usa String.raw
+// para conservar los \xNN y \n del código PHP generado tal cual.
+const HELPER_TABLA_PHP = String.raw`// ---- Funciones auxiliares para bloques tipo Tabla ----
+// Se agregan una sola vez aunque haya varios bloques de este tipo en el ticket.
+function _tabla_estilo($nombre) {
+  $estilos = [
+    'basico'     => ['esquina' => '+', 'horizontal' => '-', 'vertical' => '|'],
+    'doble'      => ['esquina' => '+', 'horizontal' => '=', 'vertical' => '|'],
+    'punteado'   => ['esquina' => '+', 'horizontal' => '.', 'vertical' => ':'],
+    'asteriscos' => ['esquina' => '*', 'horizontal' => '-', 'vertical' => '*'],
+  ];
+  return $estilos[$nombre] ?? $estilos['basico'];
+}
+function _tabla_anchos($columnasConfig, $filas) {
+  $anchos = [];
+  foreach ($columnasConfig as $c => $cfg) {
+    if ($cfg['autoajuste']) {
+      $max = 0;
+      foreach ($filas as $fila) $max = max($max, mb_strlen($fila[$c]['texto'], 'UTF-8'));
+      $anchos[] = max(1, $max);
+    } else {
+      $anchos[] = max(1, (int)($cfg['ancho'] ?? 1));
+    }
+  }
+  return $anchos;
+}
+function _tabla_celda($texto, $ancho, $alineacion) {
+  $t = mb_substr($texto, 0, $ancho, 'UTF-8');   // truncado multibyte-safe (tildes, ñ)
+  $espacio = $ancho - mb_strlen($t, 'UTF-8');
+  if ($alineacion === 'right') return str_repeat(' ', $espacio) . $t;
+  if ($alineacion === 'center') {
+    $izq = (int) floor($espacio / 2);
+    return str_repeat(' ', $izq) . $t . str_repeat(' ', $espacio - $izq);
+  }
+  return $t . str_repeat(' ', $espacio);
+}
+function _tabla_linea_borde($anchos, $estilo) {
+  $partes = array_map(fn($a) => str_repeat($estilo['horizontal'], $a + 2), $anchos);
+  return $estilo['esquina'] . implode($estilo['esquina'], $partes) . $estilo['esquina'];
+}
+// Agrega un bloque Tabla completo a $ticket. $ESC/$GS se reciben por parámetro.
+function agregar_bloque_tabla(&$ticket, $ESC, $GS, $tabla) {
+  $estilo = _tabla_estilo($tabla['estiloBorde']);
+  $anchos = _tabla_anchos($tabla['columnasConfig'], $tabla['filas']);
+  $bordes = $tabla['bordes'];
+
+  $ticket .= $ESC . "a" . "\x00";  // alinear izquierda (obligatorio en tablas)
+  $ticket .= $GS  . "!" . "\x00";  // tamaño normal (obligatorio en tablas)
+  $ticket .= $ESC . "M" . ($tabla['fuente'] === 'B' ? "\x01" : "\x00");
+
+  if ($bordes) $ticket .= _tabla_linea_borde($anchos, $estilo) . "\n";
+
+  foreach ($tabla['filas'] as $i => $fila) {
+    $piezas = [];
+    foreach ($fila as $c => $celda) {
+      $txt = _tabla_celda($celda['texto'], $anchos[$c], $celda['alineacion']);
+      $seg = '';
+      if ($celda['negrita'])   $seg .= $ESC . "E" . "\x01";
+      if ($celda['subrayado']) $seg .= $ESC . "-" . "\x01";
+      $seg .= $txt;
+      if ($celda['negrita'])   $seg .= $ESC . "E" . "\x00";
+      if ($celda['subrayado']) $seg .= $ESC . "-" . "\x00";
+      $piezas[] = $seg;
+    }
+    $ticket .= $bordes
+      ? ($estilo['vertical'] . implode($estilo['vertical'], array_map(fn($p) => " $p ", $piezas)) . $estilo['vertical'])
+      : implode(' ', $piezas);
+    $ticket .= "\n";
+
+    $esUltima = ($i === count($tabla['filas']) - 1);
+    if (!$esUltima && (($i === 0 && $tabla['encabezado']) || $tabla['grilla'])) {
+      $ticket .= $bordes
+        ? _tabla_linea_borde($anchos, $estilo)
+        : str_repeat($estilo['horizontal'], array_sum($anchos) + (count($anchos) - 1));
+      $ticket .= "\n";
+    }
+  }
+
+  if ($bordes) $ticket .= _tabla_linea_borde($anchos, $estilo) . "\n";
+}
+// ---- Fin funciones auxiliares de Tabla ----`;
+
+// Genera el array literal PHP de los datos de un bloque tabla.
+function phpValorTabla(b){
+  const cfg = (b.columnasConfig || []).map(c => {
+    return c.autoajuste
+      ? "['autoajuste'=>true,'ancho'=>null]"
+      : `['autoajuste'=>false,'ancho'=>${Math.max(1, parseInt(c.ancho, 10) || 1)}]`;
+  });
+  const filas = (b.filas || []).map(fila => {
+    const celdas = fila.map(celda =>
+      `['texto'=>"${phpEscapeString(celda.texto || '')}",'alineacion'=>'${celda.alineacion || 'left'}','negrita'=>${celda.negrita ? 'true' : 'false'},'subrayado'=>${celda.subrayado ? 'true' : 'false'}]`
+    );
+    return '[' + celdas.join(',') + ']';
+  });
+  return "[\n    'fuente' => '" + (b.fuente === 'B' ? 'B' : 'A') + "',\n"
+    + "    'bordes' => " + (b.bordes ? 'true' : 'false') + ",\n"
+    + "    'estiloBorde' => '" + (b.estiloBorde || 'basico') + "',\n"
+    + "    'encabezado' => " + (b.encabezado ? 'true' : 'false') + ",\n"
+    + "    'grilla' => " + (b.grilla ? 'true' : 'false') + ",\n"
+    + "    'columnasConfig' => [" + cfg.join(',') + "],\n"
+    + "    'filas' => [" + filas.join(',') + "]\n  ]";
+}
+
 // Genera código PHP equivalente a los bloques actuales, listo para
 // pegar en tu generar_ticket.php (mismo formato de respuesta JSON
 // que espera esta página en la pestaña "Probador").
@@ -1535,6 +1911,13 @@ function bloquesAPhpCodigo(listaBloques){
   lineas.push('');
   lineas.push('$ticket  = $ESC . "@";           // inicializar impresora');
   lineas.push('$ticket .= $ESC . "t" . "\\x00";  // code page CP437');
+
+  const hayTablas = listaBloques.some(b => b.tipo === 'tabla');
+  if(hayTablas){
+    lineas.push('');
+    lineas.push(HELPER_TABLA_PHP);
+    lineas.push('');
+  }
 
   let alineacionActual = 'left', negritaActual = false, subrayadoActual = false, tamanoActual = 'normal', fuenteActual = 'A';
   const mapaTamanoHex = { normal:'\\x00', ancho:'\\x10', alto:'\\x01', ambos:'\\x11' };
@@ -1655,6 +2038,14 @@ function bloquesAPhpCodigo(listaBloques){
       const alto = parseInt(b.alto, 10) || 1;
       const x = Math.ceil(ancho / 8);
       lineas.push(`$ticket .= $GS . "v" . "0" . "\\x30" . chr(${x & 0xFF}) . chr(${(x >> 8) & 0xFF}) . chr(${alto & 0xFF}) . chr(${(alto >> 8) & 0xFF}) . base64_decode("${b.data}");  // imagen rasterizada`);
+    } else if(b.tipo === 'tabla'){
+      lineas.push('agregar_bloque_tabla($ticket, $ESC, $GS, ' + phpValorTabla(b) + ');');
+      // El helper normaliza alineación/tamaño/negrita/subrayado/fuente; sincroniza el tracking
+      alineacionActual = 'left';
+      tamanoActual = 'normal';
+      negritaActual = false;
+      subrayadoActual = false;
+      fuenteActual = (b.fuente === 'B' ? '\\x01' : '\\x00');
     }
   }
 
@@ -1697,6 +2088,8 @@ function mostrarCamposDe(tipo){
   el('camposCodigo').style.display = tipo === 'barcode' ? 'block' : 'none';
   el('camposQr').style.display = tipo === 'qr' ? 'block' : 'none';
   el('camposImagen').style.display = tipo === 'image' ? 'block' : 'none';
+  el('camposTabla').style.display = tipo === 'tabla' ? 'block' : 'none';
+  if(tipo === 'tabla') renderizarTablaBorrador(); // redibuja el borrador al mostrarse
 }
 el('nuevoTipoBloque').addEventListener('change', () => {
   mostrarCamposDe(el('nuevoTipoBloque').value);
@@ -1813,6 +2206,201 @@ function renderizarSegmentosBorrador(){
 }
 renderizarSegmentosBorrador();
 
+/* ----------------------------------------------------------------
+   BORRADOR DEL BLOQUE "TABLA" — el formulario arma una grilla de
+   columnas (autoajuste/ancho fijo) y filas de celdas (texto,
+   alineación, negrita, subrayado) antes de confirmarla como bloque
+   (story: e06s01). Sin bordes/encabezado/grilla hasta e06s02.
+   ---------------------------------------------------------------- */
+let tablaBorrador = null; // se inicializa en tablaBorradorVacio()
+
+function columnaConfigVacia(){ return { autoajuste:true, ancho:null }; }
+function celdaVacia(){ return { texto:'', alineacion:'left', negrita:false, subrayado:false }; }
+function filaVacia(nCols){ return Array.from({length:nCols}, celdaVacia); }
+function tablaBorradorVacio(){
+  return {
+    fuente: 'A',
+    columnas: 3,
+    bordes: false,
+    estiloBorde: 'basico',   // se persiste aunque bordes=false (spec-bloque-tabla.md §3.1)
+    encabezado: false,
+    grilla: false,
+    columnasConfig: [columnaConfigVacia(), columnaConfigVacia(), columnaConfigVacia()],
+    filas: [filaVacia(3), filaVacia(3)]
+  };
+}
+tablaBorrador = tablaBorradorVacio();
+
+function actualizarIndicadorAnchoTabla(){
+  const anchoPapel = parseInt(el('anchoPapel').value, 10);
+  const disponible = cplSegunFuente(tablaBorrador.fuente, anchoPapel);
+  const usado = anchoTotalTabla(tablaBorrador);
+  const excedido = usado > disponible;
+  const papel = anchoPapel === 48 ? '80' : '58';
+  el('campoAnchoTabla').textContent = `Ancho de la tabla: ${usado} / ${disponible} caracteres (Fuente ${tablaBorrador.fuente}, papel ${papel} mm)` + (excedido ? ' ⚠️ excede el papel' : '');
+  el('campoAnchoTabla').style.color = excedido ? '#b00020' : '';
+}
+
+function renderizarTablaBorrador(){
+  // Configuración por columna
+  const contCol = el('listaColumnasTabla');
+  contCol.innerHTML = '';
+  tablaBorrador.columnasConfig.forEach((cfg, c) => {
+    const fila = document.createElement('div');
+    fila.className = 'row tabla-col';
+    const etq = document.createElement('label');
+    etq.textContent = `Col ${c + 1}`;
+    const auto = document.createElement('label');
+    auto.innerHTML = `<input type="checkbox" class="tabla-col-auto" data-col="${c}" ${cfg.autoajuste ? 'checked' : ''}> Autoajuste`;
+    const ancho = document.createElement('input');
+    ancho.type = 'text'; ancho.inputMode = 'numeric'; ancho.maxLength = 2;
+    ancho.className = 'tabla-col-ancho';
+    ancho.dataset.col = String(c);
+    ancho.placeholder = 'ancho';
+    ancho.disabled = cfg.autoajuste;
+    ancho.value = cfg.autoajuste ? '' : (cfg.ancho ?? '');
+    fila.append(etq, auto, ancho);
+    contCol.appendChild(fila);
+  });
+
+  // Grilla de filas/celdas
+  const contFilas = el('listaFilasTabla');
+  contFilas.innerHTML = '';
+  tablaBorrador.filas.forEach((fila, f) => {
+    const cajaFila = document.createElement('div');
+    cajaFila.className = 'tabla-fila';
+    const cab = document.createElement('div');
+    cab.className = 'tabla-fila-cab';
+    cab.textContent = `Fila ${f + 1}`;
+    const quitar = document.createElement('button');
+    quitar.type = 'button';
+    quitar.className = 'tabla-fila-quitar';   // story: e07s01 — sin btn-danger (acción secundaria)
+    quitar.textContent = '✕';
+    quitar.title = 'Quitar fila';
+    quitar.dataset.fila = String(f);
+    quitar.disabled = tablaBorrador.filas.length <= 1;
+    cab.appendChild(quitar);
+    cajaFila.appendChild(cab);
+
+    fila.forEach((celda, c) => {
+      const cajaCelda = document.createElement('div');
+      cajaCelda.className = 'tabla-celda';
+      const tx = document.createElement('input');
+      tx.type = 'text';
+      tx.className = 'tabla-celda-texto';
+      tx.placeholder = `C${c + 1}`;
+      tx.dataset.fila = String(f); tx.dataset.celda = String(c);
+      tx.value = celda.texto;
+      const sel = document.createElement('select');
+      sel.className = 'tabla-celda-alineacion';
+      sel.dataset.fila = String(f); sel.dataset.celda = String(c);
+      ['left','center','right'].forEach(a => {
+        const o = document.createElement('option');
+        o.value = a;
+        o.textContent = a === 'left' ? 'Izq' : a === 'center' ? 'Centro' : 'Der';
+        o.selected = celda.alineacion === a;
+        sel.appendChild(o);
+      });
+      const neg = document.createElement('label');
+      neg.innerHTML = `<input type="checkbox" class="tabla-celda-check" data-fila="${f}" data-celda="${c}" data-campo="negrita" ${celda.negrita ? 'checked' : ''}> N`;
+      const sub = document.createElement('label');
+      sub.innerHTML = `<input type="checkbox" class="tabla-celda-check" data-fila="${f}" data-celda="${c}" data-campo="subrayado" ${celda.subrayado ? 'checked' : ''}> S`;
+      // story: e07s01 — N/S en horizontal (patrón .segmento-checks)
+      const formato = document.createElement('div');
+      formato.className = 'tabla-celda-formato';
+      formato.append(neg, sub);
+      cajaCelda.append(tx, sel, formato);
+      cajaFila.appendChild(cajaCelda);
+    });
+    contFilas.appendChild(cajaFila);
+  });
+
+  el('campoEstiloBordeTabla').disabled = !tablaBorrador.bordes;
+  actualizarIndicadorAnchoTabla();
+}
+
+// Eventos del borrador de tabla (delegados, mismo patrón que listaSegmentos)
+el('listaColumnasTabla').addEventListener('change', (e) => {
+  if(e.target.classList.contains('tabla-col-auto')){
+    const c = parseInt(e.target.dataset.col, 10);
+    tablaBorrador.columnasConfig[c].autoajuste = e.target.checked;
+    if(e.target.checked) tablaBorrador.columnasConfig[c].ancho = null;
+    renderizarTablaBorrador();
+  }
+});
+el('listaColumnasTabla').addEventListener('input', (e) => {
+  if(e.target.classList.contains('tabla-col-ancho')){
+    const c = parseInt(e.target.dataset.col, 10);
+    const v = parseInt(e.target.value, 10);
+    tablaBorrador.columnasConfig[c].ancho = (e.target.value === '' || !Number.isFinite(v)) ? null : Math.max(1, Math.min(64, v));
+    actualizarIndicadorAnchoTabla();
+  }
+});
+el('listaFilasTabla').addEventListener('input', (e) => {
+  if(e.target.classList.contains('tabla-celda-texto')){
+    const f = parseInt(e.target.dataset.fila, 10), c = parseInt(e.target.dataset.celda, 10);
+    tablaBorrador.filas[f][c].texto = e.target.value;
+    actualizarIndicadorAnchoTabla();
+  }
+});
+el('listaFilasTabla').addEventListener('change', (e) => {
+  if(e.target.classList.contains('tabla-celda-alineacion')){
+    const f = parseInt(e.target.dataset.fila, 10), c = parseInt(e.target.dataset.celda, 10);
+    tablaBorrador.filas[f][c].alineacion = e.target.value;
+  } else if(e.target.classList.contains('tabla-celda-check')){
+    const f = parseInt(e.target.dataset.fila, 10), c = parseInt(e.target.dataset.celda, 10);
+    tablaBorrador.filas[f][c][e.target.dataset.campo] = e.target.checked;
+  }
+});
+el('listaFilasTabla').addEventListener('click', (e) => {
+  if(e.target.classList.contains('tabla-fila-quitar')){
+    const f = parseInt(e.target.dataset.fila, 10);
+    if(tablaBorrador.filas.length <= 1) return;
+    tablaBorrador.filas.splice(f, 1);
+    renderizarTablaBorrador();
+  }
+});
+el('btnAgregarFilaTabla').addEventListener('click', () => {
+  if(tablaBorrador.filas.length >= MAX_FILAS_TABLA){
+    log(`Máximo de ${MAX_FILAS_TABLA} filas alcanzado.`, 'error');
+    return;
+  }
+  tablaBorrador.filas.push(filaVacia(tablaBorrador.columnas));
+  renderizarTablaBorrador();
+});
+el('campoFuenteTabla').addEventListener('change', () => {
+  tablaBorrador.fuente = el('campoFuenteTabla').value;
+  actualizarIndicadorAnchoTabla();
+});
+el('campoColumnasTabla').addEventListener('change', () => {
+  const n = parseInt(el('campoColumnasTabla').value, 10);
+  const actual = tablaBorrador.columnas;
+  if(n > actual){
+    for(let i = actual; i < n; i++){
+      tablaBorrador.columnasConfig.push(columnaConfigVacia());
+      tablaBorrador.filas.forEach(fila => fila.push(celdaVacia()));
+    }
+  } else if(n < actual){
+    tablaBorrador.columnasConfig.length = n;
+    tablaBorrador.filas.forEach(fila => fila.length = n);   // sin confirmación (decisión §12.2)
+  }
+  tablaBorrador.columnas = n;
+  renderizarTablaBorrador();
+});
+el('campoBordesTabla').addEventListener('change', () => {
+  tablaBorrador.bordes = el('campoBordesTabla').checked;
+  renderizarTablaBorrador(); // habilita/deshabilita el estilo y recalcula el ancho
+});
+el('campoEstiloBordeTabla').addEventListener('change', () => {
+  tablaBorrador.estiloBorde = el('campoEstiloBordeTabla').value;
+});
+el('campoEncabezadoTabla').addEventListener('change', () => {
+  tablaBorrador.encabezado = el('campoEncabezadoTabla').checked;
+});
+el('campoGrillaTabla').addEventListener('change', () => {
+  tablaBorrador.grilla = el('campoGrillaTabla').checked;
+});
+
 function resetearFormulario(){
   el('nuevoTipoBloque').value = 'texto';
   mostrarCamposDe('texto');
@@ -1842,6 +2430,14 @@ function resetearFormulario(){
   el('campoImagenAlto').textContent = 'Alto: automático según el ancho elegido';
   if(el('campoImagenArchivo')) el('campoImagenArchivo').value = '';
   imagenBorrador = null;
+  tablaBorrador = tablaBorradorVacio();
+  el('campoFuenteTabla').value = 'A';
+  el('campoColumnasTabla').value = '3';
+  el('campoBordesTabla').checked = false;
+  el('campoEstiloBordeTabla').value = 'basico';
+  el('campoEncabezadoTabla').checked = false;
+  el('campoGrillaTabla').checked = false;
+  renderizarTablaBorrador();
   renderizarSegmentosBorrador();
 }
 
@@ -1895,6 +2491,24 @@ function cargarBloqueEnFormulario(idx){
     const img = new Image();
     img.onload = () => { imagenBorrador = { img, naturalW: img.naturalWidth, naturalH: img.naturalHeight }; };
     img.src = src;
+  } else if(b.tipo === 'tabla'){
+    tablaBorrador = {
+      fuente: b.fuente || 'A',
+      columnas: b.columnas,
+      bordes: !!b.bordes,
+      estiloBorde: b.estiloBorde || 'basico',
+      encabezado: !!b.encabezado,
+      grilla: !!b.grilla,
+      columnasConfig: (b.columnasConfig || []).map(cfg => ({ autoajuste: !!cfg.autoajuste, ancho: cfg.ancho ?? null })),
+      filas: (b.filas || []).map(fila => fila.map(celda => ({ texto: celda.texto || '', alineacion: celda.alineacion || 'left', negrita: !!celda.negrita, subrayado: !!celda.subrayado })))
+    };
+    el('campoFuenteTabla').value = tablaBorrador.fuente;
+    el('campoColumnasTabla').value = String(tablaBorrador.columnas);
+    el('campoBordesTabla').checked = tablaBorrador.bordes;
+    el('campoEstiloBordeTabla').value = tablaBorrador.estiloBorde;
+    el('campoEncabezadoTabla').checked = tablaBorrador.encabezado;
+    el('campoGrillaTabla').checked = tablaBorrador.grilla;
+    renderizarTablaBorrador();
   }
   el('btnAgregarBloque').textContent = 'Guardar cambios';
   el('btnCancelarEdicion').style.display = 'block';
@@ -1995,6 +2609,38 @@ el('btnAgregarBloque').addEventListener('click', () => {
     if(el('campoImagenArchivo')) el('campoImagenArchivo').value = '';
     el('campoImagenMini').innerHTML = '';
     el('campoAnchoImagen').value = '';
+  } else if(tipo === 'tabla'){
+    const filasValidas = tablaBorrador.filas.filter(fila => fila.some(celda => (celda.texto || '').trim().length > 0));
+    if(filasValidas.length === 0){
+      log('Escribe texto en al menos una celda de la tabla antes de agregar el bloque.', 'error');
+      return;
+    }
+    const anchoPapel = parseInt(el('anchoPapel').value, 10);
+    const disponible = cplSegunFuente(tablaBorrador.fuente, anchoPapel);
+    const usado = anchoTotalTabla(tablaBorrador);
+    if(usado > disponible){
+      // Solo advertencia visual (decisión §12.3): no se bloquea el agregado.
+      log(`Advertencia: la tabla mide ${usado} caracteres y el papel permite ${disponible} (Fuente ${tablaBorrador.fuente}). Se agrega igualmente.`);
+    }
+    bloque = {
+      tipo: 'tabla',
+      fuente: tablaBorrador.fuente,
+      columnas: tablaBorrador.columnas,
+      bordes: !!tablaBorrador.bordes,
+      estiloBorde: tablaBorrador.estiloBorde || 'basico',
+      encabezado: !!tablaBorrador.encabezado,
+      grilla: !!tablaBorrador.grilla,
+      columnasConfig: tablaBorrador.columnasConfig.map(cfg => ({ autoajuste: !!cfg.autoajuste, ancho: cfg.ancho ?? null })),
+      filas: tablaBorrador.filas.map(fila => fila.map(celda => ({ texto: celda.texto || '', alineacion: celda.alineacion || 'left', negrita: !!celda.negrita, subrayado: !!celda.subrayado })))
+    };
+    tablaBorrador = tablaBorradorVacio();
+    el('campoFuenteTabla').value = 'A';
+    el('campoColumnasTabla').value = '3';
+    el('campoBordesTabla').checked = false;
+    el('campoEstiloBordeTabla').value = 'basico';
+    el('campoEncabezadoTabla').checked = false;
+    el('campoGrillaTabla').checked = false;
+    renderizarTablaBorrador();
   } else {
     bloque = { tipo }; // salto
   }
