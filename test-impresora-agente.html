@@ -262,6 +262,44 @@
     flex-shrink:0;
   }
 
+  /* --- Usabilidad panel "Filas y celdas" del bloque Tabla (story: e07s01) --- */
+  .tabla-fila-cab{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:4px;
+  }
+  .tabla-fila-quitar{
+    background:#3a3a37;
+    color:var(--paper-light);
+    padding:2px 6px;
+    font-size:11px;
+    border:1px solid #34342f;
+    border-radius:3px;
+  }
+  .tabla-fila-quitar:not(:disabled):hover,
+  .tabla-fila-quitar:not(:disabled):focus{
+    color:#fff;
+    background:var(--red);
+    border-color:var(--red);
+    opacity:1;
+  }
+  .tabla-celda-formato{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .tabla-celda-formato label{
+    display:inline-flex;
+    align-items:center;
+    gap:2px;
+    margin:0;
+    font-size:11px;
+    white-space:nowrap;
+    color:#c8c4b0;
+    cursor:pointer;
+  }
+
   /* --- Vista previa estilo ticket real --- */
   .receipt-wrapper{
     display:flex;
@@ -2236,8 +2274,9 @@ function renderizarTablaBorrador(){
     cab.textContent = `Fila ${f + 1}`;
     const quitar = document.createElement('button');
     quitar.type = 'button';
-    quitar.className = 'btn-danger tabla-fila-quitar';
-    quitar.textContent = '✕ Quitar fila';
+    quitar.className = 'tabla-fila-quitar';   // story: e07s01 — sin btn-danger (acción secundaria)
+    quitar.textContent = '✕';
+    quitar.title = 'Quitar fila';
     quitar.dataset.fila = String(f);
     quitar.disabled = tablaBorrador.filas.length <= 1;
     cab.appendChild(quitar);
@@ -2266,7 +2305,11 @@ function renderizarTablaBorrador(){
       neg.innerHTML = `<input type="checkbox" class="tabla-celda-check" data-fila="${f}" data-celda="${c}" data-campo="negrita" ${celda.negrita ? 'checked' : ''}> N`;
       const sub = document.createElement('label');
       sub.innerHTML = `<input type="checkbox" class="tabla-celda-check" data-fila="${f}" data-celda="${c}" data-campo="subrayado" ${celda.subrayado ? 'checked' : ''}> S`;
-      cajaCelda.append(tx, sel, neg, sub);
+      // story: e07s01 — N/S en horizontal (patrón .segmento-checks)
+      const formato = document.createElement('div');
+      formato.className = 'tabla-celda-formato';
+      formato.append(neg, sub);
+      cajaCelda.append(tx, sel, formato);
       cajaFila.appendChild(cajaCelda);
     });
     contFilas.appendChild(cajaFila);
